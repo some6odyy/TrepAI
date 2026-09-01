@@ -1,5 +1,5 @@
 [project]
-name = "mi-app-fastapi"
+name = "trepAI"
 version = "0.1.0"
 description = "Despliegue en Vercel"
 dependencies = [] # O añade tus dependencias aquí si no usas requirements.txt
