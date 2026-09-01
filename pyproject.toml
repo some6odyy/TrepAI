@@ -1,1 +1,8 @@
+[project]
+name = "tu-proyecto-fastapi"
+version = "0.1.0"
+# ... otras configuraciones requeridas por uv ...
 
+[tool.vercel]
+# Indica: Carpeta "app", archivo "main.py", variable "app"
+entrypoint = "app.main:app"
