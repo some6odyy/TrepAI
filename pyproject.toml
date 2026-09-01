@@ -13,8 +13,7 @@ dependencies = [
     "bcrypt>=5.0.0",
     "python-jose[cryptography]>=3.3.0",
     "requests>=2.32.3"
-    [tool.vercel]
 ]
-
+[tool.vercel]
 # Indica: Carpeta "app", archivo "main.py", variable "app"
 entrypoint = "app.main:app"
