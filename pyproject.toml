@@ -1,4 +1,8 @@
+[project]
+name = "mi-app-fastapi"
+version = "0.1.0"
+description = "Despliegue en Vercel"
+dependencies = [] # O añade tus dependencias aquí si no usas requirements.txt
+
 [tool.vercel]
-# Le dice a Vercel dónde está la instancia de FastAPI, ya que no está en
-# main.py/app.py en la raíz del repo sino en app/main.py.
 entrypoint = "app:main"
