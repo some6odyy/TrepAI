@@ -9,3 +9,4 @@ tests/
 deploy/
 .git/
 .gitignore
+pyproject.toml
