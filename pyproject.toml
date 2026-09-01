@@ -1,8 +1,20 @@
 [project]
 name = "TrepAI"
 version = "0.1.0"
-# ... tus otras configuraciones y dependencias ...
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.6",
+    "gunicorn>=23.0.0",
+    "sqlalchemy>=2.0.52",
+    "psycopg[binary]>=3.2.3",
+    "pydantic>=2.13.4",
+    "email-validator>=2.2.0",
+    "python-dotenv>=1.0.1",
+    "bcrypt>=5.0.0",
+    "python-jose[cryptography]>=3.3.0",
+    "requests>=2.32.3",
+    [tool.vercel]
+]
 
-[tool.vercel]
 # Indica: Carpeta "app", archivo "main.py", variable "app"
 entrypoint = "app.main:app"
