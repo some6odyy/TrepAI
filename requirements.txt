@@ -4,8 +4,8 @@
 # instalado) y fallaba en máquinas sin ese toolchain — típico en salas de
 # la universidad. Con >= dejamos que pip resuelva la versión más nueva
 # compatible, que ya viene con wheel listo para instalar en 3.11–3.14.
-fastapi>=0.115.0
-uvicorn[standard]>=0.30.6
+fastapi>=0.117.1
+uvicorn[standard]>=0.30.0
 gunicorn>=23.0.0
 sqlalchemy>=2.0.52
 psycopg[binary]>=3.2.3
