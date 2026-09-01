@@ -66,7 +66,7 @@ async def recibir_mensaje(request: Request, db: Session = Depends(get_db)):
     """Punto de entrada de cada mensaje entrante de un cliente por WhatsApp."""
     payload = await request.json()
 
-    # 1) Extraer el mensaje y a qué número de Nilo AI llegó (RF-06)
+    # 1) Extraer el mensaje y a qué número de TrepAI llegó (RF-06)
     telefono_cliente, texto_mensaje, phone_number_id = whatsapp_service.parsear_evento(payload)
     if not texto_mensaje or not phone_number_id:
         # Eventos que no son mensajes de texto (confirmaciones de lectura,

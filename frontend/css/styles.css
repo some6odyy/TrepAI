@@ -1,47 +1,50 @@
 /* ==========================================================================
-   Nilo AI — Dashboard
-   Dirección visual: SaaS claro y profesional, pensado para que el dueño
-   de una pyme lo vea y confíe en el producto a primera vista. Azul de
-   marca (#2487D4) reservado para el logo y los estados interactivos
-   (hover/activo), así no compite con los colores de estado (verde/ámbar/
-   rojo) que hacen el trabajo pesado de comunicar información en las
-   tablas y tarjetas.
+   TrepAI — Dashboard
+   Dirección visual: chupalla de huaso chileno. Paleta tierra/paja como
+   base, rojo huaso como color de marca (logo + estados interactivos),
+   cuero curtido para el texto — cálido y con carácter, no un SaaS
+   corporativo genérico. 'Fraunces' en titulares le da ese trazo con
+   textura de rótulo hecho a mano; 'Inter' se encarga de la legibilidad
+   en formularios y tablas.
    ========================================================================== */
 
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
 :root {
-  --bg: #f4f6fa;
-  --surface: #ffffff;
-  --surface-muted: #f7f9fc;
-  --border: #e6e9f0;
-  --border-strong: #d7dce6;
+  --bg: #f6eedf;
+  --surface: #fffbf3;
+  --surface-muted: #efe1c4;
+  --border: #e3d2a8;
+  --border-strong: #cbaf7c;
 
-  --text: #1c2333;
-  --text-muted: #6b7280;
-  --text-faint: #9aa1b1;
+  --text: #3a2a1c;
+  --text-muted: #7c6448;
+  --text-faint: #a88f68;
 
-  --brand: #2487d4;
-  --brand-strong: #1c6eb0;
-  --brand-tint: #eaf3fc;
-  --brand-tint-strong: #d7ebfb;
+  --brand: #a6432b;
+  --brand-strong: #832f1c;
+  --brand-tint: #f5e0d6;
+  --brand-tint-strong: #ebc5b4;
 
-  --success: #17a673;
-  --success-tint: #e6f7f1;
-  --warning: #e2a13b;
-  --warning-tint: #fdf3e3;
-  --danger: #e0564f;
-  --danger-tint: #fceceb;
+  --leather: #6b4226;
+  --leather-tint: #ece0cd;
 
-  --font-display: 'Plus Jakarta Sans', 'Inter', sans-serif;
+  --success: #5c7a3f;
+  --success-tint: #e8eedd;
+  --warning: #b9812c;
+  --warning-tint: #f5e7c9;
+  --danger: #c0392b;
+  --danger-tint: #f9e2df;
+
+  --font-display: 'Fraunces', 'Georgia', serif;
   --font-body: 'Inter', -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
 
   --radius: 14px;
   --radius-sm: 9px;
-  --shadow-sm: 0 1px 2px rgba(28, 35, 51, 0.05);
-  --shadow: 0 4px 16px rgba(28, 35, 51, 0.06);
-  --shadow-lg: 0 12px 32px rgba(28, 35, 51, 0.10);
+  --shadow-sm: 0 1px 2px rgba(58, 42, 28, 0.06);
+  --shadow: 0 4px 16px rgba(58, 42, 28, 0.08);
+  --shadow-lg: 0 12px 32px rgba(58, 42, 28, 0.14);
 }
 
 * { box-sizing: border-box; }
@@ -87,7 +90,7 @@ button, input, textarea, select { font-family: var(--font-body); }
 .btn:active { transform: scale(0.98); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-.btn-primary { background: var(--brand); border-color: var(--brand); color: #ffffff; box-shadow: 0 2px 8px rgba(36, 135, 212, 0.28); }
+.btn-primary { background: var(--brand); border-color: var(--brand); color: #ffffff; box-shadow: 0 2px 8px rgba(166, 67, 43, 0.28); }
 .btn-primary:hover { background: var(--brand-strong); border-color: var(--brand-strong); color: #fff; }
 
 .btn-danger { color: var(--danger); }
@@ -179,12 +182,19 @@ tr:last-child td { border-bottom: none; }
   place-items: center;
   padding: 20px;
   background:
-    radial-gradient(circle at 15% 10%, rgba(36, 135, 212, 0.10), transparent 42%),
-    radial-gradient(circle at 85% 90%, rgba(23, 166, 115, 0.07), transparent 42%),
+    radial-gradient(circle at 15% 10%, rgba(166, 67, 43, 0.10), transparent 42%),
+    radial-gradient(circle at 85% 90%, rgba(92, 122, 63, 0.08), transparent 42%),
     var(--bg);
 }
 .auth-box { width: 100%; max-width: 380px; }
 .auth-brand { text-align: center; margin-bottom: 28px; }
+.auth-brand .logo-chip {
+  width: 56px; height: 56px; border-radius: 14px; margin: 0 auto 12px;
+  background: var(--brand); color: #fff;
+  display: grid; place-items: center;
+  box-shadow: 0 6px 18px rgba(166, 67, 43, 0.3);
+}
+.auth-brand .logo-chip svg { width: 32px; height: 32px; }
 .auth-brand .brand { font-size: 30px; font-weight: 800; color: var(--brand); letter-spacing: -0.01em; }
 .auth-brand p { margin: 4px 0 0; color: var(--text-muted); font-size: 13px; }
 .auth-tabs { display: flex; gap: 4px; margin-bottom: 20px; background: var(--surface-muted); border-radius: 10px; padding: 4px; }
@@ -194,7 +204,7 @@ tr:last-child td { border-bottom: none; }
 }
 .auth-tab.active { background: var(--surface); color: var(--brand-strong); box-shadow: var(--shadow-sm); }
 .auth-error {
-  background: var(--danger-tint); color: var(--danger); border: 1px solid #f3c9c6;
+  background: var(--danger-tint); color: var(--danger); border: 1px solid #e8b8ae;
   padding: 10px 12px; border-radius: 9px; font-size: 13px; margin-bottom: 14px;
 }
 .auth-box .card { box-shadow: var(--shadow-lg); }
@@ -220,8 +230,8 @@ tr:last-child td { border-bottom: none; }
   width: 28px; height: 28px; border-radius: 8px;
   background: var(--brand); color: #fff;
   display: grid; place-items: center; flex-shrink: 0;
-  font-family: var(--font-display); font-size: 15px; font-weight: 800;
 }
+.sidebar .brand .logo-mark svg { width: 17px; height: 17px; }
 .nav-item {
   display: flex;
   align-items: center;
@@ -236,7 +246,7 @@ tr:last-child td { border-bottom: none; }
 }
 .nav-item svg { width: 18px; height: 18px; flex-shrink: 0; }
 .nav-item:hover { background: var(--brand-tint); color: var(--brand-strong); }
-.nav-item.active { background: var(--brand); color: #fff; box-shadow: 0 2px 8px rgba(36, 135, 212, 0.3); }
+.nav-item.active { background: var(--brand); color: #fff; box-shadow: 0 2px 8px rgba(166, 67, 43, 0.3); }
 .sidebar-footer { margin-top: auto; padding-top: 14px; border-top: 1px solid var(--border); }
 .sidebar-footer .negocio-nombre { font-size: 13.5px; font-weight: 700; }
 .sidebar-footer .admin-correo { font-size: 12px; color: var(--text-faint); margin-bottom: 10px; }
@@ -292,7 +302,7 @@ tr:last-child td { border-bottom: none; }
 .stat-card .stat-value { font-size: 24px; font-weight: 800; letter-spacing: -0.01em; }
 .stat-card .stat-value.small { font-size: 15px; }
 
-.icon-blue { background: var(--brand-tint); color: var(--brand-strong); }
+.icon-brand { background: var(--brand-tint); color: var(--brand-strong); }
 .icon-green { background: var(--success-tint); color: var(--success); }
 .icon-amber { background: var(--warning-tint); color: var(--warning); }
 .icon-slate { background: var(--surface-muted); color: var(--text-muted); }
@@ -306,7 +316,7 @@ tr:last-child td { border-bottom: none; }
   margin-bottom: 18px;
   display: flex; align-items: center; justify-content: space-between; gap: 16px;
   color: #fff;
-  box-shadow: 0 8px 24px rgba(36, 135, 212, 0.28);
+  box-shadow: 0 8px 24px rgba(166, 67, 43, 0.28);
 }
 .bot-card.off { background: var(--surface); color: var(--text); box-shadow: var(--shadow-sm); border: 1px solid var(--border); }
 .bot-card .sign-title { font-size: 16px; font-weight: 800; letter-spacing: -0.01em; }

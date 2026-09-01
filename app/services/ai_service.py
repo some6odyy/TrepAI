@@ -9,7 +9,7 @@ import requests
 
 from app.core.config import AI_PROVIDER, AI_API_KEY, GEMINI_MODEL, OPENAI_MODEL, MAX_RESPONSE_LATENCY_SECONDS
 
-logger = logging.getLogger("nilo_ai.ai_service")
+logger = logging.getLogger("trepai.ai_service")
 
 # Si la IA falla o se demora más de lo aceptable (RNF-01), el cliente
 # igual necesita una respuesta — nunca dejamos el mensaje sin contestar.

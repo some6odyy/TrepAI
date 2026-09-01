@@ -1,12 +1,12 @@
-/* Capa de acceso a la API de Nilo AI. Todo el resto del frontend pasa
+/* Capa de acceso a la API de TrepAI. Todo el resto del frontend pasa
  * por acá para no repetir el manejo del token ni de errores. */
 
-const API_BASE = window.NILO_API_BASE || 'http://127.0.0.1:8000';
+const API_BASE = window.TREPAI_API_BASE || 'http://127.0.0.1:8000';
 
 const Auth = {
-  getToken: () => localStorage.getItem('nilo_token'),
-  setToken: (t) => localStorage.setItem('nilo_token', t),
-  clearToken: () => localStorage.removeItem('nilo_token'),
+  getToken: () => localStorage.getItem('trepai_token'),
+  setToken: (t) => localStorage.setItem('trepai_token', t),
+  clearToken: () => localStorage.removeItem('trepai_token'),
 };
 
 /**

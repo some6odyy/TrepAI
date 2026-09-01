@@ -1,8 +1,11 @@
-# Nilo AI — Backend + Dashboard
+# TrepAI — Backend + Dashboard
 
-Plataforma SaaS que automatiza la atención al cliente de pymes por
-WhatsApp usando IA. Estructura por capas (FastAPI + SQLAlchemy + SQLite),
-fiel al MER y a los RF/RNF del informe del Grupo 7.
+Plataforma SaaS que le da a las pymes un asistente con IA para atender a
+sus clientes por WhatsApp de forma automática — la idea detrás del
+nombre es justo esa: que un negocio chico pueda **trepar** y crecer sin
+tener que contratar a alguien solo para contestar mensajes. Estructura
+por capas (FastAPI + SQLAlchemy + SQLite), fiel al MER y a los RF/RNF
+del informe del Grupo 7.
 
 ## Estructura
 
@@ -49,7 +52,7 @@ cp .env.example .env             # y completa tus credenciales
 uvicorn app.main:app --reload
 ```
 
-Al levantar, SQLAlchemy crea automáticamente `nilo_ai.db` con las 8 tablas
+Al levantar, SQLAlchemy crea automáticamente `trepai.db` con las 8 tablas
 del diccionario de datos.
 
 - API y documentación interactiva: `http://127.0.0.1:8000/docs`
@@ -98,7 +101,7 @@ de credenciales.
 
 > ⚠️ **Importante sobre el plan gratuito (Hobby):** los Términos de
 > Servicio de Vercel restringen el plan Hobby a uso personal/no comercial.
-> Sirve perfecto para probar NiloAI, hacer la demo y validar el producto
+> Sirve perfecto para probar TrepAI, hacer la demo y validar el producto
 > — pero si van a cobrarle a clientes reales, van a necesitar el plan
 > **Pro** (USD 20/mes) antes de lanzarlo de verdad.
 
@@ -106,7 +109,7 @@ de credenciales.
 
 Vercel es **serverless**: cada request puede correr en una instancia
 distinta y el disco no persiste entre invocaciones. Eso significa que
-`nilo_ai.db` (SQLite) **se perdería** — no sirve para producción acá.
+`trepai.db` (SQLite) **se perdería** — no sirve para producción acá.
 Por eso el proyecto ahora soporta Postgres a través de la misma
 `DATABASE_URL` (no hay que tocar código, solo cambiar la variable).
 
@@ -164,7 +167,7 @@ derecha):
 | `DATABASE_URL` | El connection string de Neon del paso 1, con el prefijo `postgresql+psycopg://` |
 | `SECRET_KEY` | La que generaste en el paso 2 |
 | `ENCRYPTION_KEY` | La que generaste en el paso 2 |
-| `WHATSAPP_VERIFY_TOKEN` | Cualquier string que inventes (ej. `nilo_ai_verify_2026`) — lo vas a volver a usar en el paso 6 |
+| `WHATSAPP_VERIFY_TOKEN` | Cualquier string que inventes (ej. `trepai_verify_2026`) — lo vas a volver a usar en el paso 6 |
 | `AI_PROVIDER` | `gemini` u `openai` |
 | `AI_API_KEY` | Tu clave de la API de IA (ver paso 5) |
 | `GEMINI_MODEL` | `gemini-3.6-flash` (si usas Gemini) |
@@ -193,7 +196,7 @@ variable.
 ### 6. Conectar el webhook real de WhatsApp
 
 Una vez desplegado, Vercel te da una URL propia con HTTPS automático
-(algo como `https://nilo-ai.vercel.app`) — ya cumple el requisito de
+(algo como `https://trepai.vercel.app`) — ya cumple el requisito de
 Meta sin necesitar nginx ni certbot como en un VPS.
 
 1. Entra a [developers.facebook.com](https://developers.facebook.com),
@@ -205,7 +208,7 @@ Meta sin necesitar nginx ni certbot como en un VPS.
 3. Dale "Verify and Save" — Meta le va a pegar un GET a tu webhook; si
    el token coincide, queda verificado (esto es exactamente lo que hace
    `verificar_webhook()` en `app/routers/webhook.py`).
-4. Desde el Dashboard de NiloAI (`https://tu-proyecto.vercel.app/dashboard/`),
+4. Desde el Dashboard de TrepAI (`https://tu-proyecto.vercel.app/dashboard/`),
    en el negocio correspondiente, conecta el **Phone Number ID** y el
    **token de acceso** que Meta te da en esa misma pantalla de
    configuración (bloque "Conexión con WhatsApp" → queda cifrado en la
@@ -236,30 +239,30 @@ y gunicorn+uvicorn corriendo la app como servicio del sistema.
 1. **Preparar el servidor**
    ```bash
    sudo apt update && sudo apt install -y python3-venv python3-pip nginx certbot python3-certbot-nginx
-   sudo adduser --system --group nilo
+   sudo adduser --system --group trepai
    ```
 
 2. **Subir el código y crear el entorno**
    ```bash
-   git clone <tu-repo> /home/nilo/nilo-ai-backend
-   cd /home/nilo/nilo-ai-backend
+   git clone <tu-repo> /home/trepai/trepai-backend
+   cd /home/trepai/trepai-backend
    python3 -m venv .venv
    .venv/bin/pip install -r requirements.txt
    cp .env.example .env   # completar con las credenciales reales de producción
    ```
 
-3. **Servicio systemd** — copia `deploy/nilo-ai.service` a
-   `/etc/systemd/system/nilo-ai.service`, ajusta usuario/rutas si difieren, y:
+3. **Servicio systemd** — copia `deploy/trepai.service` a
+   `/etc/systemd/system/trepai.service`, ajusta usuario/rutas si difieren, y:
    ```bash
    sudo systemctl daemon-reload
-   sudo systemctl enable --now nilo-ai
-   sudo systemctl status nilo-ai
+   sudo systemctl enable --now trepai-ai
+   sudo systemctl status trepai-ai
    ```
 
 4. **Nginx + HTTPS** — copia `deploy/nginx.conf` a
-   `/etc/nginx/sites-available/nilo-ai`, ajusta `server_name` a tu dominio:
+   `/etc/nginx/sites-available/trepai-ai`, ajusta `server_name` a tu dominio:
    ```bash
-   sudo ln -s /etc/nginx/sites-available/nilo-ai /etc/nginx/sites-enabled/
+   sudo ln -s /etc/nginx/sites-available/trepai-ai /etc/nginx/sites-enabled/
    sudo nginx -t && sudo systemctl reload nginx
    sudo certbot --nginx -d tu-dominio.cl
    ```
@@ -280,10 +283,10 @@ y gunicorn+uvicorn corriendo la app como servicio del sistema.
 ### Después de cada actualización de código
 
 ```bash
-cd /home/nilo/nilo-ai-backend
+cd /home/trepai/trepai-backend
 git pull
 .venv/bin/pip install -r requirements.txt
-sudo systemctl restart nilo-ai
+sudo systemctl restart trepai-ai
 python tests/smoke_test.py
 ```
 

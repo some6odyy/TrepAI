@@ -1,5 +1,5 @@
 /* ==========================================================================
-   Nilo AI — Dashboard
+   TrepAI — Dashboard
    Sin framework: el stack del proyecto es HTML/CSS/JS + Bootstrap según el
    informe, y aquí usamos vanilla JS porque el Dashboard es un solo negocio
    por sesión — no justifica el peso de un framework de componentes.

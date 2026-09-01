@@ -1,5 +1,5 @@
 """
-Nilo AI - Backend
+TrepAI - Backend
 Plataforma SaaS que automatiza la atención al cliente de pymes vía
 WhatsApp usando IA (ver informe TSI, Grupo 7).
 """
@@ -13,7 +13,7 @@ from app import models  # noqa: F401 — registra los modelos en Base antes de c
 from app.routers import auth, negocio, contexto, webhook, agenda, conversaciones
 
 app = FastAPI(
-    title="Nilo AI",
+    title="TrepAI",
     description="Chatbot con IA para pymes y microempresas vía WhatsApp",
     version="0.1.0",
 )
@@ -40,7 +40,7 @@ app.include_router(webhook.router)
 
 @app.get("/")
 def estado_del_servicio():
-    return {"servicio": "Nilo AI", "estado": "operativo"}
+    return {"servicio": "TrepAI", "estado": "operativo"}
 
 
 # El Dashboard queda disponible en /dashboard/ — así en producción no se

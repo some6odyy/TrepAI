@@ -1,5 +1,5 @@
 """
-Configuración central de Nilo AI.
+Configuración central de TrepAI.
 Lee variables de entorno para no dejar credenciales hardcodeadas en el código.
 """
 import os
@@ -11,7 +11,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 load_dotenv(BASE_DIR / ".env")
 
 # --- Base de datos ---
-DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{BASE_DIR}/nilo_ai.db")
+DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{BASE_DIR}/trepai.db")
 
 # --- Autenticación (RF-01) ---
 SECRET_KEY = os.getenv("SECRET_KEY", "CAMBIAR_ESTA_CLAVE_EN_PRODUCCION")
@@ -21,7 +21,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 8  # 8 horas
 # --- WhatsApp Business Cloud API (RF-06 / RF-09) ---
 # El phone_number_id y el token viven por negocio (tabla negocio), no acá,
 # porque cada pyme conecta su propio número de WhatsApp Business.
-WHATSAPP_VERIFY_TOKEN = os.getenv("WHATSAPP_VERIFY_TOKEN", "nilo_ai_verify")
+WHATSAPP_VERIFY_TOKEN = os.getenv("WHATSAPP_VERIFY_TOKEN", "trepai_verify")
 
 # --- Motor de IA (RF-08) ---
 AI_PROVIDER = os.getenv("AI_PROVIDER", "gemini")  # gemini | openai

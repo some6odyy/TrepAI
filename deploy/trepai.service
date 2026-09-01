@@ -1,0 +1,28 @@
+[Unit]
+Description=TrepAI — backend FastAPI
+After=network.target
+
+[Service]
+# Ajusta usuario y rutas a tu VPS real.
+User=trepai
+Group=trepai
+WorkingDirectory=/home/trepai/trepai-backend
+Environment="PATH=/home/trepai/trepai-backend/.venv/bin"
+EnvironmentFile=/home/trepai/trepai-backend/.env
+
+# 2 vCPU -> 2 workers es un punto de partida razonable (regla: 2*cores+1
+# para apps con I/O bloqueante; FastAPI async necesita menos, ajustar según
+# RNF-01 al medir carga real).
+ExecStart=/home/trepai/trepai-backend/.venv/bin/gunicorn app.main:app \
+    --workers 2 \
+    --worker-class uvicorn.workers.UvicornWorker \
+    --bind 127.0.0.1:8000 \
+    --timeout 30 \
+    --access-logfile - \
+    --error-logfile -
+
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

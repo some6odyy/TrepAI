@@ -4,7 +4,7 @@ __pycache__/
 *.pyc
 .env
 *.db
-nilo_ai.db
+trepai.db
 tests/
 deploy/
 .git/

@@ -10,7 +10,7 @@ import logging
 
 import requests
 
-logger = logging.getLogger("nilo_ai.whatsapp")
+logger = logging.getLogger("trepai.whatsapp")
 
 GRAPH_API_VERSION = "v19.0"
 
@@ -19,7 +19,7 @@ def parsear_evento(payload: dict) -> tuple[str | None, str | None, str | None]:
     """Extrae (telefono_cliente, texto_mensaje, phone_number_id_receptor)
     del payload crudo del webhook.
 
-    El phone_number_id_receptor es el número DE NILO AI que recibió el
+    El phone_number_id_receptor es el número DE TREPAI que recibió el
     mensaje — con eso identificamos a qué negocio pertenece (RNF-02).
 
     Devuelve (None, None, None) si el evento no trae un mensaje de texto

@@ -5,7 +5,7 @@ from app.db.database import Base
 
 
 class Negocio(Base):
-    """Un negocio suscrito a Nilo AI (ej. Silvabarber). Aísla los datos
+    """Un negocio suscrito a TrepAI (ej. Silvabarber). Aísla los datos
     entre negocios para cumplir RNF-02 (arquitectura multitenant)."""
 
     __tablename__ = "negocio"

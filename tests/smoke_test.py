@@ -1,5 +1,5 @@
 """
-Pruebas end-to-end de Nilo AI con datos realistas de Silvabarber.
+Pruebas end-to-end de TrepAI con datos realistas de Silvabarber.
 
 Corre contra un backend real levantado en localhost — no es un mock.
 Recorre el journey completo: registro -> negocio -> contexto -> WhatsApp
@@ -208,7 +208,7 @@ def main():
     correo = f"silva{sufijo}@barberia.cl"
     contrasena = "claveSegura123"
 
-    print("Nilo AI — pruebas end-to-end con datos de Silvabarber\n")
+    print("TrepAI — pruebas end-to-end con datos de Silvabarber\n")
 
     verificar_backend()
     registrar_administrador(correo, contrasena)
