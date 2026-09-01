@@ -1,4 +1,4 @@
 [tool.vercel]
 # Le dice a Vercel dónde está la instancia de FastAPI, ya que no está en
 # main.py/app.py en la raíz del repo sino en app/main.py.
-entrypoint = "app/main.py"
+entrypoint = "app:main"
