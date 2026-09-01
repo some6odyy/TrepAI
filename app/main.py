@@ -6,6 +6,7 @@ WhatsApp usando IA (ver informe TSI, Grupo 7).
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import RedirectResponse
 
 from app.db.database import Base, engine
 from app.core.config import CORS_ALLOWED_ORIGINS, BASE_DIR
@@ -39,6 +40,11 @@ app.include_router(webhook.router)
 
 
 @app.get("/")
+def raiz():
+    return RedirectResponse(url="/dashboard/")
+
+
+@app.get("/status")
 def estado_del_servicio():
     return {"servicio": "TrepAI", "estado": "operativo"}
 
