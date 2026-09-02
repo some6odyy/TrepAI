@@ -1,484 +1,607 @@
 <!DOCTYPE html>
 <html lang="es">
+
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>TrepAI · Dashboard</title>
-<link rel="stylesheet" href="css/styles.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TrepAI · Dashboard</title>
+  <link rel="stylesheet" href="css/styles.css">
 </head>
+
 <body>
 
-<!-- ============ PANTALLA DE LOGIN / REGISTRO ============ -->
-<div class="auth-screen" id="authScreen">
-  <div class="auth-box">
-    <div class="auth-brand">
-      <div class="logo-chip"><svg viewBox="0 0 24 24"><path d="M7 16.5C7 9.6 9.3 6 12 6c2.7 0 5 3.6 5 10.5" fill="currentColor" stroke="none"/><rect x="7.6" y="13.5" width="8.8" height="1.4" rx="0.7" fill="var(--brand)"/><ellipse cx="12" cy="16.6" rx="9.2" ry="2.6" fill="currentColor" stroke="none"/></svg></div>
-      <div class="brand">TREPAI</div>
-      <p>Panel del administrador</p>
+  <!-- ============ PANTALLA DE LOGIN / REGISTRO ============ -->
+  <div class="auth-screen" id="authScreen">
+    <div class="auth-box">
+      <div class="auth-brand">
+        <div class="logo-chip"><svg viewBox="0 0 24 24">
+            <path d="M7 16.5C7 9.6 9.3 6 12 6c2.7 0 5 3.6 5 10.5" fill="currentColor" stroke="none" />
+            <rect x="7.6" y="13.5" width="8.8" height="1.4" rx="0.7" fill="var(--brand)" />
+            <ellipse cx="12" cy="16.6" rx="9.2" ry="2.6" fill="currentColor" stroke="none" />
+          </svg></div>
+        <div class="brand">TREPAI</div>
+        <p>Panel del administrador</p>
+      </div>
+
+      <div class="auth-tabs">
+        <div class="auth-tab active" data-tab="login">Iniciar sesión</div>
+        <div class="auth-tab" data-tab="registro">Crear cuenta</div>
+      </div>
+
+      <div class="auth-error hidden" id="authError"></div>
+
+      <form id="formLogin">
+        <div class="field">
+          <label for="loginCorreo">Correo</label>
+          <input type="email" id="loginCorreo" required autocomplete="username">
+        </div>
+        <div class="field">
+          <label for="loginContrasena">Contraseña</label>
+          <input type="password" id="loginContrasena" required autocomplete="current-password">
+        </div>
+        <button type="submit" class="btn btn-primary btn-block">Entrar</button>
+      </form>
+
+      <form id="formRegistro" class="hidden">
+        <div class="field">
+          <label for="regNombre">Tu nombre</label>
+          <input type="texautot" id="regNombre" required>
+        </div>
+        <div class="field">
+          <label for="regCorreo">Correo</label>
+          <input type="email" id="regCorreo" required autocomplete="username">
+        </div>
+        <div class="field">
+          <label for="regContrasena">Contraseña</label>
+          <input type="password" id="regContrasena" required minlength="8" autocomplete="new-password">
+        </div>
+        <button type="submit" class="btn btn-primary btn-block">Crear cuenta</button>
+      </form>
     </div>
-
-    <div class="auth-tabs">
-      <div class="auth-tab active" data-tab="login">Iniciar sesión</div>
-      <div class="auth-tab" data-tab="registro">Crear cuenta</div>
-    </div>
-
-    <div class="auth-error hidden" id="authError"></div>
-
-    <form id="formLogin">
-      <div class="field">
-        <label for="loginCorreo">Correo</label>
-        <input type="email" id="loginCorreo" required autocomplete="username">
-      </div>
-      <div class="field">
-        <label for="loginContrasena">Contraseña</label>
-        <input type="password" id="loginContrasena" required autocomplete="current-password">
-      </div>
-      <button type="submit" class="btn btn-primary btn-block">Entrar</button>
-    </form>
-
-    <form id="formRegistro" class="hidden">
-      <div class="field">
-        <label for="regNombre">Tu nombre</label>
-        <input type="text" id="regNombre" required>
-      </div>
-      <div class="field">
-        <label for="regCorreo">Correo</label>
-        <input type="email" id="regCorreo" required autocomplete="username">
-      </div>
-      <div class="field">
-        <label for="regContrasena">Contraseña</label>
-        <input type="password" id="regContrasena" required minlength="8" autocomplete="new-password">
-      </div>
-      <button type="submit" class="btn btn-primary btn-block">Crear cuenta</button>
-    </form>
   </div>
-</div>
 
-<!-- ============ SHELL DEL DASHBOARD ============ -->
-<div class="app-shell" id="appShell">
-  <aside class="sidebar">
-    <div class="brand"><span class="logo-mark"><svg viewBox="0 0 24 24"><path d="M7 16.5C7 9.6 9.3 6 12 6c2.7 0 5 3.6 5 10.5" fill="currentColor" stroke="none"/><rect x="7.6" y="13.5" width="8.8" height="1.4" rx="0.7" fill="var(--brand)"/><ellipse cx="12" cy="16.6" rx="9.2" ry="2.6" fill="currentColor" stroke="none"/></svg></span>TrepAI</div>
-    <nav>
-      <div class="nav-item active" data-view="resumen">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="8" rx="2"/><rect x="3" y="13" width="8" height="8" rx="2"/><rect x="13" y="13" width="8" height="8" rx="2"/></svg>
-        Resumen
-      </div>
-      <div class="nav-item" data-view="contexto">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><circle cx="9" cy="6" r="2" fill="currentColor" stroke="none"/><line x1="4" y1="12" x2="20" y2="12"/><circle cx="15" cy="12" r="2" fill="currentColor" stroke="none"/><line x1="4" y1="18" x2="20" y2="18"/><circle cx="11" cy="18" r="2" fill="currentColor" stroke="none"/></svg>
-        Contexto IA
-      </div>
-      <div class="nav-item" data-view="agenda">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/></svg>
-        Agenda
-      </div>
-      <div class="nav-item" data-view="historial">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-8.9 8.4 8.5 8.5 0 0 1-4-1L3 20l1.1-5a8.4 8.4 0 0 1-1-4A8.4 8.4 0 0 1 11.5 3 8.5 8.5 0 0 1 21 11.5Z"/></svg>
-        Historial
-      </div>
-    </nav>
-    <div class="sidebar-footer">
-      <div class="negocio-nombre" id="sidebarNegocio">—</div>
-      <div class="admin-correo" id="sidebarCorreo">—</div>
-      <button class="btn btn-sm btn-block" id="btnLogout">Cerrar sesión</button>
-    </div>
-  </aside>
+  <!-- ============ SHELL DEL DASHBOARD ============ -->
+  <div class="app-shell" id="appShell">
+    <aside class="sidebar">
+      <div class="brand"><span class="logo-mark"><svg viewBox="0 0 24 24">
+            <path d="M7 16.5C7 9.6 9.3 6 12 6c2.7 0 5 3.6 5 10.5" fill="currentColor" stroke="none" />
+            <rect x="7.6" y="13.5" width="8.8" height="1.4" rx="0.7" fill="var(--brand)" />
+            <ellipse cx="12" cy="16.6" rx="9.2" ry="2.6" fill="currentColor" stroke="none" />
+          </svg></span>TrepAI</div>
+      <nav>
+        <div class="nav-item active" data-view="resumen">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+            stroke-linejoin="round">
+            <rect x="3" y="3" width="8" height="8" rx="2" />
+            <rect x="13" y="3" width="8" height="8" rx="2" />
+            <rect x="3" y="13" width="8" height="8" rx="2" />
+            <rect x="13" y="13" width="8" height="8" rx="2" />
+          </svg>
+          Resumen
+        </div>
+        <div class="nav-item" data-view="contexto">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+            stroke-linejoin="round">
+            <line x1="4" y1="6" x2="20" y2="6" />
+            <circle cx="9" cy="6" r="2" fill="currentColor" stroke="none" />
+            <line x1="4" y1="12" x2="20" y2="12" />
+            <circle cx="15" cy="12" r="2" fill="currentColor" stroke="none" />
+            <line x1="4" y1="18" x2="20" y2="18" />
+            <circle cx="11" cy="18" r="2" fill="currentColor" stroke="none" />
+          </svg>
+          Contexto IA
+        </div>
+        <div class="nav-item" data-view="agenda">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+            stroke-linejoin="round">
+            <rect x="3" y="5" width="18" height="16" rx="2" />
+            <line x1="3" y1="10" x2="21" y2="10" />
+            <line x1="8" y1="2" x2="8" y2="6" />
+            <line x1="16" y1="2" x2="16" y2="6" />
+          </svg>
+          Agenda
+        </div>
+        <div class="nav-item" data-view="historial">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+            stroke-linejoin="round">
+            <path
+              d="M21 11.5a8.4 8.4 0 0 1-8.9 8.4 8.5 8.5 0 0 1-4-1L3 20l1.1-5a8.4 8.4 0 0 1-1-4A8.4 8.4 0 0 1 11.5 3 8.5 8.5 0 0 1 21 11.5Z" />
+          </svg>
+          Historial
+        </div>
+        <div class="sidebar-footer">
+          <div class="negocio-nombre" id="sidebarNegocio">—</div>
+          <div class="admin-correo" id="sidebarCorreo">—</div>
+          <button class="btn btn-sm btn-block" id="btnLogout">Cerrar sesión</button>
+        </div>
+      </nav>
+    </aside>
 
-  <div style="display:flex; flex-direction:column; min-width:0;">
-    <div class="topbar">
-      <div class="topbar-crumb" id="topbarNegocio">—</div>
-      <div class="topbar-right">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
-        <span class="topbar-admin-tag">Administrador</span>
-      </div>
-    </div>
-
-    <main class="main">
-
-    <!-- ---------- RESUMEN: perfil + interruptor del bot + WhatsApp ---------- -->
-    <section class="view active" id="viewResumen">
-      <div class="greeting">
-        <div>
-          <h1 id="saludoTitulo">Buen día</h1>
-          <div class="subline" id="saludoFecha">—</div>
-        </div>
-        <div class="greeting-actions">
-          <button class="btn" data-view-link="agenda">Ver agenda</button>
-          <button class="btn btn-primary" data-view-link="contexto">Agregar servicio</button>
-        </div>
-      </div>
-
-      <div class="stat-grid">
-        <div class="stat-card">
-          <div class="stat-top">
-            <span class="stat-label">Citas de hoy</span>
-            <span class="stat-icon icon-brand"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg></span>
-          </div>
-          <div class="stat-value" id="statCitasHoy">0</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-top">
-            <span class="stat-label">Citas pendientes</span>
-            <span class="stat-icon icon-amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/></svg></span>
-          </div>
-          <div class="stat-value" id="statCitasPendientes">0</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-top">
-            <span class="stat-label">Conversaciones</span>
-            <span class="stat-icon icon-green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-8.9 8.4 8.5 8.5 0 0 1-4-1L3 20l1.1-5a8.4 8.4 0 0 1-1-4A8.4 8.4 0 0 1 11.5 3 8.5 8.5 0 0 1 21 11.5Z"/></svg></span>
-          </div>
-          <div class="stat-value" id="statConversaciones">0</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-top">
-            <span class="stat-label">Servicios activos</span>
-            <span class="stat-icon icon-slate"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 12.9 12.9 20.6a2 2 0 0 1-2.8 0l-7-7a2 2 0 0 1 0-2.8L10.8 3h6.8a3 3 0 0 1 3 3v6.9Z"/><circle cx="16" cy="8" r="1.3" fill="currentColor" stroke="none"/></svg></span>
-          </div>
-          <div class="stat-value" id="statServicios">0</div>
+    <div style="display:flex; flex-direction:column; min-width:0;">
+      <div class="topbar">
+        <div class="topbar-crumb" id="topbarNegocio">—</div>
+        <div class="topbar-right">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+            stroke-linejoin="round">
+            <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
+            <path d="M13.7 21a2 2 0 0 1-3.4 0" />
+          </svg>
+          <span class="topbar-admin-tag">Administrador</span>
         </div>
       </div>
 
-      <div class="bot-card off" id="botCard">
-        <div>
-          <div class="sign-title" id="signTitle">Bot apagado</div>
-          <div class="sign-sub">Cuando está encendido, TrepAI responde automáticamente en WhatsApp.</div>
-        </div>
-        <div class="sign-switch" id="botSwitch" role="switch" aria-checked="false" tabindex="0"></div>
-      </div>
+      <main class="main">
 
-      <div class="card">
-        <div class="card-header">
-          <h2>Perfil del negocio</h2>
-        </div>
-        <form id="formPerfil">
-          <div class="field-row">
-            <div class="field">
-              <label for="perfilNombre">Nombre del negocio</label>
-              <input type="text" id="perfilNombre" required>
-            </div>
-            <div class="field">
-              <label for="perfilTelefono">Teléfono</label>
-              <input type="text" id="perfilTelefono">
-            </div>
-          </div>
-          <div class="field">
-            <label for="perfilDireccion">Dirección</label>
-            <input type="text" id="perfilDireccion">
-          </div>
-          <div class="field">
-            <label for="perfilHorario">Horario de atención</label>
-            <input type="text" id="perfilHorario" placeholder="Lun-Sáb 10:00-19:00">
-          </div>
-          <button type="submit" class="btn btn-primary">Guardar cambios</button>
-        </form>
-      </div>
-
-      <div class="card">
-        <div class="card-header">
-          <h2>Conexión con WhatsApp</h2>
-          <span class="badge badge-muted" id="whatsappBadge">Sin conectar</span>
-        </div>
-        <p class="text-muted">Obtén estos datos en developers.facebook.com → WhatsApp → Configuración de la API (modo sandbox mientras la app no esté verificada por Meta).</p>
-        <form id="formWhatsapp">
-          <div class="field">
-            <label for="waPhoneId">Phone Number ID</label>
-            <input type="text" id="waPhoneId" required>
-          </div>
-          <div class="field">
-            <label for="waToken">Token de acceso</label>
-            <input type="password" id="waToken" required>
-          </div>
-          <button type="submit" class="btn btn-primary">Conectar</button>
-        </form>
-      </div>
-    </section>
-
-    <!-- ---------- CONTEXTO IA: reglas + catálogo de servicios ---------- -->
-    <section class="view" id="viewContexto">
-      <h1 class="view-title">Arquitectura del Asistente</h1>
-      <p class="view-subtitle">Los bloques que arman lo que tu bot sabe y cómo se comporta.</p>
-
-      <div class="block-grid">
-        <div class="block-card" data-block="personificacion">
-          <div class="block-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="8" r="4"/></svg>
-          </div>
-          <div class="block-title">Personificación</div>
-          <div class="block-sub">Tono, estilo del bot.</div>
-        </div>
-
-        <div class="block-card" data-block="catalogo">
-          <div class="block-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 12.9 12.9 20.6a2 2 0 0 1-2.8 0l-7-7a2 2 0 0 1 0-2.8L10.8 3h6.8a3 3 0 0 1 3 3v6.9Z"/><circle cx="16" cy="8" r="1.3" fill="currentColor" stroke="none"/></svg>
-          </div>
-          <div class="block-title">Catálogo &amp; Precios</div>
-          <div class="block-sub">Servicios disponibles.</div>
-        </div>
-
-        <div class="block-card" data-block="reglas">
-          <div class="block-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
-          </div>
-          <div class="block-title">Reglas del Local</div>
-          <div class="block-sub">Horarios y políticas.</div>
-        </div>
-
-        <div class="block-card" data-block="motorIa">
-          <div class="block-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z"/></svg>
-          </div>
-          <div class="block-title">Motor de IA</div>
-          <div class="block-sub">Proveedor y modelo.</div>
-        </div>
-
-        <div class="block-card dashed" id="btnAnadirBloque">
-          <div class="block-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
-          </div>
-          <div class="block-title">Añadir Bloque</div>
-          <div class="block-sub">Próximamente</div>
-        </div>
-      </div>
-
-      <div class="accordion-panel" id="panelPersonificacion">
-        <div class="card">
-          <div class="card-header"><h2>Personificación</h2><p>Cómo suena tu bot al responder.</p></div>
-          <form id="formPersonificacion">
-            <div class="field">
-              <label for="ctxInstrucciones">Tono y estilo</label>
-              <textarea id="ctxInstrucciones" placeholder="Ej: Responde breve y con calidez, usa el nombre del cliente si lo conoces"></textarea>
-            </div>
-            <button type="submit" class="btn btn-primary">Guardar</button>
-          </form>
-        </div>
-      </div>
-
-      <div class="accordion-panel" id="panelCatalogo">
-        <div class="card">
-          <div class="card-header"><h2>Catálogo &amp; Precios</h2></div>
-          <table>
-            <thead><tr><th>Servicio</th><th>Precio</th><th>Duración</th><th></th></tr></thead>
-            <tbody id="tablaServicios"></tbody>
-          </table>
-          <form id="formServicio" style="margin-top:18px; padding-top:18px; border-top:1px solid var(--border);">
-            <div class="field-row">
-              <div class="field">
-                <label for="servNombre">Nombre del servicio</label>
-                <input type="text" id="servNombre" required>
-              </div>
-              <div class="field">
-                <label for="servPrecio">Precio (CLP)</label>
-                <input type="number" id="servPrecio" min="1" required>
-              </div>
-            </div>
-            <div class="field-row">
-              <div class="field">
-                <label for="servDuracion">Duración (min)</label>
-                <input type="number" id="servDuracion" min="1" required>
-              </div>
-              <div class="field">
-                <label for="servDescripcion">Descripción (opcional)</label>
-                <input type="text" id="servDescripcion">
-              </div>
-            </div>
-            <button type="submit" class="btn btn-primary">Agregar servicio</button>
-          </form>
-        </div>
-      </div>
-
-      <div class="accordion-panel" id="panelReglas">
-        <div class="card">
-          <div class="card-header"><h2>Reglas del Local</h2><p>Horarios y políticas del negocio.</p></div>
-          <form id="formReglas">
-            <div class="field">
-              <label for="ctxReglas">Reglas del negocio</label>
-              <textarea id="ctxReglas" placeholder="Ej: No agendar fuera del horario de atención"></textarea>
-            </div>
-            <button type="submit" class="btn btn-primary">Guardar</button>
-          </form>
-        </div>
-      </div>
-
-      <div class="accordion-panel" id="panelMotorIa">
-        <div class="card">
-          <div class="card-header"><h2>Motor de IA</h2><p>Qué modelo responde los mensajes de este negocio.</p></div>
-
-          <div class="provider-tabs">
-            <div class="provider-tab active" data-provider="gemini">Google Gemini</div>
-            <div class="provider-tab" data-provider="openai">OpenAI</div>
-          </div>
-
-          <div class="model-list" id="listaModelosGemini">
-            <div class="model-option" data-provider="gemini" data-model="gemini-3.1-pro">
-              <div class="model-radio"></div>
-              <div class="model-info">
-                <div class="model-name">Gemini 3.1 Pro</div>
-                <div class="model-desc">Máxima calidad de razonamiento — ideal para negocios con conversaciones más complejas.</div>
-                <div class="model-id">gemini-3.1-pro</div>
-              </div>
-            </div>
-            <div class="model-option" data-provider="gemini" data-model="gemini-3.6-flash">
-              <div class="model-radio"></div>
-              <div class="model-info">
-                <div class="model-name">Gemini 3.6 Flash <span class="model-tag">Recomendado</span></div>
-                <div class="model-desc">Equilibrio entre velocidad, calidad y costo. La opción por defecto de TrepAI.</div>
-                <div class="model-id">gemini-3.6-flash</div>
-              </div>
-            </div>
-            <div class="model-option" data-provider="gemini" data-model="gemini-3.5-flash-lite">
-              <div class="model-radio"></div>
-              <div class="model-info">
-                <div class="model-name">Gemini 3.5 Flash-Lite</div>
-                <div class="model-desc">La más rápida y económica — ideal para alto volumen de mensajes.</div>
-                <div class="model-id">gemini-3.5-flash-lite</div>
-              </div>
-            </div>
-          </div>
-
-          <div class="model-list hidden" id="listaModelosOpenai">
-            <div class="model-option" data-provider="openai" data-model="gpt-5.5">
-              <div class="model-radio"></div>
-              <div class="model-info">
-                <div class="model-name">GPT-5.5</div>
-                <div class="model-desc">Máxima calidad de razonamiento de OpenAI.</div>
-                <div class="model-id">gpt-5.5</div>
-              </div>
-            </div>
-            <div class="model-option" data-provider="openai" data-model="gpt-5.4-mini">
-              <div class="model-radio"></div>
-              <div class="model-info">
-                <div class="model-name">GPT-5.4 Mini <span class="model-tag">Recomendado</span></div>
-                <div class="model-desc">Equilibrio entre velocidad, calidad y costo dentro de la familia OpenAI.</div>
-                <div class="model-id">gpt-5.4-mini</div>
-              </div>
-            </div>
-            <div class="model-option" data-provider="openai" data-model="gpt-4o">
-              <div class="model-radio"></div>
-              <div class="model-info">
-                <div class="model-name">GPT-4o</div>
-                <div class="model-desc">Modelo clásico de OpenAI, buena compatibilidad general.</div>
-                <div class="model-id">gpt-4o</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="webhooks-label">Funciones de sistema (webhooks)</div>
-      <div class="card">
-        <div class="webhook-row">
-          <div class="webhook-info">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>
+        <!-- ---------- RESUMEN: perfil + interruptor del bot + WhatsApp ---------- -->
+        <section class="view active" id="viewResumen">
+          <div class="greeting">
             <div>
-              <div class="webhook-title">Consultar catálogo de servicios</div>
-              <div class="webhook-sub">El bot cita precios y duraciones reales en sus respuestas.</div>
+              <h1 id="saludoTitulo">Buen día</h1>
+              <div class="subline" id="saludoFecha">—</div>
+            </div>
+            <div class="greeting-actions">
+              <button class="btn" data-view-link="agenda">Ver agenda</button>
+              <button class="btn btn-primary" data-view-link="contexto">Agregar servicio</button>
             </div>
           </div>
-          <div class="switch-sm" id="toggleCatalogo"></div>
-        </div>
-        <div class="webhook-row">
-          <div class="webhook-info">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><path d="m9 15 2 2 4-4"/></svg>
+
+          <div class="stat-grid">
+            <div class="stat-card">
+              <div class="stat-top">
+                <span class="stat-label">Citas de hoy</span>
+                <span class="stat-icon icon-brand"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="9" />
+                    <path d="M12 7v5l3 3" />
+                  </svg></span>
+              </div>
+              <div class="stat-value" id="statCitasHoy">0</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-top">
+                <span class="stat-label">Citas pendientes</span>
+                <span class="stat-icon icon-amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="5" width="18" height="16" rx="2" />
+                    <line x1="3" y1="10" x2="21" y2="10" />
+                    <line x1="8" y1="2" x2="8" y2="6" />
+                    <line x1="16" y1="2" x2="16" y2="6" />
+                  </svg></span>
+              </div>
+              <div class="stat-value" id="statCitasPendientes">0</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-top">
+                <span class="stat-label">Conversaciones</span>
+                <span class="stat-icon icon-green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <path
+                      d="M21 11.5a8.4 8.4 0 0 1-8.9 8.4 8.5 8.5 0 0 1-4-1L3 20l1.1-5a8.4 8.4 0 0 1-1-4A8.4 8.4 0 0 1 11.5 3 8.5 8.5 0 0 1 21 11.5Z" />
+                  </svg></span>
+              </div>
+              <div class="stat-value" id="statConversaciones">0</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-top">
+                <span class="stat-label">Servicios activos</span>
+                <span class="stat-icon icon-slate"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M20.6 12.9 12.9 20.6a2 2 0 0 1-2.8 0l-7-7a2 2 0 0 1 0-2.8L10.8 3h6.8a3 3 0 0 1 3 3v6.9Z" />
+                    <circle cx="16" cy="8" r="1.3" fill="currentColor" stroke="none" />
+                  </svg></span>
+              </div>
+              <div class="stat-value" id="statServicios">0</div>
+            </div>
+          </div>
+
+          <div class="bot-card off" id="botCard">
             <div>
-              <div class="webhook-title">Agendar cita automática</div>
-              <div class="webhook-sub">En desarrollo — el bot podrá crear la cita directo en la conversación.</div>
+              <div class="sign-title" id="signTitle">Bot apagado</div>
+              <div class="sign-sub">Cuando está encendido, TrepAI responde automáticamente en WhatsApp.</div>
+            </div>
+            <div class="sign-switch" id="botSwitch" role="switch" aria-checked="false" tabindex="0"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h2>Perfil del negocio</h2>
+            </div>
+            <form id="formPerfil">
+              <div class="field-row">
+                <div class="field">
+                  <label for="perfilNombre">Nombre del negocio</label>
+                  <input type="text" id="perfilNombre" required>
+                </div>
+                <div class="field">
+                  <label for="perfilTelefono">Teléfono</label>
+                  <input type="text" id="perfilTelefono">
+                </div>
+              </div>
+              <div class="field">
+                <label for="perfilDireccion">Dirección</label>
+                <input type="text" id="perfilDireccion">
+              </div>
+              <div class="field">
+                <label for="perfilHorario">Horario de atención</label>
+                <input type="text" id="perfilHorario" placeholder="Lun-Sáb 10:00-19:00">
+              </div>
+              <button type="submit" class="btn btn-primary">Guardar cambios</button>
+            </form>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h2>Conexión con WhatsApp</h2>
+              <span class="badge badge-muted" id="whatsappBadge">Sin conectar</span>
+            </div>
+            <p class="text-muted">Obtén estos datos en developers.facebook.com → WhatsApp → Configuración de la API
+              (modo sandbox mientras la app no esté verificada por Meta).</p>
+            <form id="formWhatsapp">
+              <div class="field">
+                <label for="waPhoneId">Phone Number ID</label>
+                <input type="text" id="waPhoneId" required>
+              </div>
+              <div class="field">
+                <label for="waToken">Token de acceso</label>
+                <input type="password" id="waToken" required>
+              </div>
+              <button type="submit" class="btn btn-primary">Conectar</button>
+            </form>
+          </div>
+        </section>
+
+        <!-- ---------- CONTEXTO IA: reglas + catálogo de servicios ---------- -->
+        <section class="view" id="viewContexto">
+          <h1 class="view-title">Arquitectura del Asistente</h1>
+          <p class="view-subtitle">Los bloques que arman lo que tu bot sabe y cómo se comporta.</p>
+
+          <div class="block-grid">
+            <div class="block-card" data-block="personificacion">
+              <div class="block-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+                  stroke-linejoin="round">
+                  <path d="M20 21a8 8 0 0 0-16 0" />
+                  <circle cx="12" cy="8" r="4" />
+                </svg>
+              </div>
+              <div class="block-title">Personificación</div>
+              <div class="block-sub">Tono, estilo del bot.</div>
+            </div>
+
+            <div class="block-card" data-block="catalogo">
+              <div class="block-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+                  stroke-linejoin="round">
+                  <path d="M20.6 12.9 12.9 20.6a2 2 0 0 1-2.8 0l-7-7a2 2 0 0 1 0-2.8L10.8 3h6.8a3 3 0 0 1 3 3v6.9Z" />
+                  <circle cx="16" cy="8" r="1.3" fill="currentColor" stroke="none" />
+                </svg>
+              </div>
+              <div class="block-title">Catálogo &amp; Precios</div>
+              <div class="block-sub">Servicios disponibles.</div>
+            </div>
+
+            <div class="block-card" data-block="reglas">
+              <div class="block-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+                  stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="9" />
+                  <path d="M12 7v5l3 3" />
+                </svg>
+              </div>
+              <div class="block-title">Reglas del Local</div>
+              <div class="block-sub">Horarios y políticas.</div>
+            </div>
+
+            <div class="block-card" data-block="motorIa">
+              <div class="block-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+                  stroke-linejoin="round">
+                  <path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z" />
+                </svg>
+              </div>
+              <div class="block-title">Motor de IA</div>
+              <div class="block-sub">Proveedor y modelo.</div>
+            </div>
+
+            <div class="block-card dashed" id="btnAnadirBloque">
+              <div class="block-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+                  stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="9" />
+                  <line x1="12" y1="8" x2="12" y2="16" />
+                  <line x1="8" y1="12" x2="16" y2="12" />
+                </svg>
+              </div>
+              <div class="block-title">Añadir Bloque</div>
+              <div class="block-sub">Próximamente</div>
             </div>
           </div>
-          <div class="switch-sm" id="toggleAgendaAuto"></div>
-        </div>
-      </div>
-    </section>
 
-    <!-- ---------- AGENDA ---------- -->
-    <section class="view" id="viewAgenda">
-      <h1 class="view-title">Agenda</h1>
-      <p class="view-subtitle">Citas agendadas por el bot o manualmente.</p>
-
-      <div class="card">
-        <div class="card-header">
-          <h2>Próximas citas</h2>
-          <input type="date" id="filtroFecha" style="width:auto; padding:8px 10px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text);">
-        </div>
-        <table>
-          <thead>
-            <tr><th>Cliente</th><th>Servicio</th><th>Fecha</th><th>Hora</th><th>Estado</th><th></th></tr>
-          </thead>
-          <tbody id="tablaAgenda"></tbody>
-        </table>
-      </div>
-
-      <div class="card">
-        <div class="card-header"><h2>Agendar manualmente</h2></div>
-        <form id="formCita">
-          <div class="field-row">
-            <div class="field">
-              <label for="citaTelefono">Teléfono del cliente</label>
-              <input type="text" id="citaTelefono" required placeholder="+56912345678">
-            </div>
-            <div class="field">
-              <label for="citaNombre">Nombre del cliente</label>
-              <input type="text" id="citaNombre">
+          <div class="accordion-panel" id="panelPersonificacion">
+            <div class="card">
+              <div class="card-header">
+                <h2>Personificación</h2>
+                <p>Cómo suena tu bot al responder.</p>
+              </div>
+              <form id="formPersonificacion">
+                <div class="field">
+                  <label for="ctxInstrucciones">Tono y estilo</label>
+                  <textarea id="ctxInstrucciones"
+                    placeholder="Ej: Responde breve y con calidez, usa el nombre del cliente si lo conoces"></textarea>
+                </div>
+                <button type="submit" class="btn btn-primary">Guardar</button>
+              </form>
             </div>
           </div>
-          <div class="field">
-            <label for="citaServicio">Servicio</label>
-            <select id="citaServicio" required></select>
-          </div>
-          <div class="field-row">
-            <div class="field">
-              <label for="citaFecha">Fecha</label>
-              <input type="date" id="citaFecha" required>
+
+          <div class="accordion-panel" id="panelCatalogo">
+            <div class="card">
+              <div class="card-header">
+                <h2>Catálogo &amp; Precios</h2>
+              </div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Servicio</th>
+                    <th>Precio</th>
+                    <th>Duración</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="tablaServicios"></tbody>
+              </table>
+              <form id="formServicio" style="margin-top:18px; padding-top:18px; border-top:1px solid var(--border);">
+                <div class="field-row">
+                  <div class="field">
+                    <label for="servNombre">Nombre del servicio</label>
+                    <input type="text" id="servNombre" required>
+                  </div>
+                  <div class="field">
+                    <label for="servPrecio">Precio (CLP)</label>
+                    <input type="number" id="servPrecio" min="1" required>
+                  </div>
+                </div>
+                <div class="field-row">
+                  <div class="field">
+                    <label for="servDuracion">Duración (min)</label>
+                    <input type="number" id="servDuracion" min="1" required>
+                  </div>
+                  <div class="field">
+                    <label for="servDescripcion">Descripción (opcional)</label>
+                    <input type="text" id="servDescripcion">
+                  </div>
+                </div>
+                <button type="submit" class="btn btn-primary">Agregar servicio</button>
+              </form>
             </div>
-            <div class="field">
-              <label for="citaHora">Hora</label>
-              <input type="time" id="citaHora" required>
+          </div>
+
+          <div class="accordion-panel" id="panelReglas">
+            <div class="card">
+              <div class="card-header">
+                <h2>Reglas del Local</h2>
+                <p>Horarios y políticas del negocio.</p>
+              </div>
+              <form id="formReglas">
+                <div class="field">
+                  <label for="ctxReglas">Reglas del negocio</label>
+                  <textarea id="ctxReglas" placeholder="Ej: No agendar fuera del horario de atención"></textarea>
+                </div>
+                <button type="submit" class="btn btn-primary">Guardar</button>
+              </form>
             </div>
           </div>
-          <button type="submit" class="btn btn-primary">Agendar cita</button>
-        </form>
-      </div>
-    </section>
 
-    <!-- ---------- HISTORIAL ---------- -->
-    <section class="view" id="viewHistorial">
-      <h1 class="view-title">Historial</h1>
-      <p class="view-subtitle">Conversaciones entre el bot y tus clientes.</p>
+          <div class="accordion-panel" id="panelMotorIa">
+            <div class="card">
+              <div class="card-header">
+                <h2>Motor de IA</h2>
+                <p>Qué modelo responde los mensajes de este negocio.</p>
+              </div>
 
-      <div class="card">
-        <table>
-          <thead>
-            <tr><th>Cliente</th><th>Teléfono</th><th>Mensajes</th><th>Estado</th><th>Última actividad</th></tr>
-          </thead>
-          <tbody id="tablaConversaciones"></tbody>
-        </table>
-      </div>
+              <div class="provider-tabs">
+                <div class="provider-tab active" data-provider="gemini">Google Gemini</div>
+                <div class="provider-tab" data-provider="openai">OpenAI</div>
+              </div>
 
-      <div class="card hidden" id="cardMensajes">
-        <div class="card-header">
-          <h2 id="mensajesTitulo">Conversación</h2>
-          <button class="btn btn-sm" id="btnCerrarMensajes">Cerrar</button>
-        </div>
-        <div class="chat-thread" id="chatThread"></div>
-      </div>
-    </section>
+              <div class="model-list" id="listaModelosGemini">
+                <div class="model-option" data-provider="gemini" data-model="gemini-3.1-pro">
+                  <div class="model-radio"></div>
+                  <div class="model-info">
+                    <div class="model-name">Gemini 3.1 Pro</div>
+                    <div class="model-desc">Máxima calidad de razonamiento — ideal para negocios con conversaciones más
+                      complejas.</div>
+                    <div class="model-id">gemini-3.1-pro</div>
+                  </div>
+                </div>
+                <div class="model-option" data-provider="gemini" data-model="gemini-3.6-flash">
+                  <div class="model-radio"></div>
+                  <div class="model-info">
+                    <div class="model-name">Gemini 3.6 Flash <span class="model-tag">Recomendado</span></div>
+                    <div class="model-desc">Equilibrio entre velocidad, calidad y costo. La opción por defecto de
+                      TrepAI.</div>
+                    <div class="model-id">gemini-3.6-flash</div>
+                  </div>
+                </div>
+                <div class="model-option" data-provider="gemini" data-model="gemini-3.5-flash-lite">
+                  <div class="model-radio"></div>
+                  <div class="model-info">
+                    <div class="model-name">Gemini 3.5 Flash-Lite</div>
+                    <div class="model-desc">La más rápida y económica — ideal para alto volumen de mensajes.</div>
+                    <div class="model-id">gemini-3.5-flash-lite</div>
+                  </div>
+                </div>
+              </div>
 
-  </main>
+              <div class="model-list hidden" id="listaModelosOpenai">
+                <div class="model-option" data-provider="openai" data-model="gpt-5.5">
+                  <div class="model-radio"></div>
+                  <div class="model-info">
+                    <div class="model-name">GPT-5.5</div>
+                    <div class="model-desc">Máxima calidad de razonamiento de OpenAI.</div>
+                    <div class="model-id">gpt-5.5</div>
+                  </div>
+                </div>
+                <div class="model-option" data-provider="openai" data-model="gpt-5.4-mini">
+                  <div class="model-radio"></div>
+                  <div class="model-info">
+                    <div class="model-name">GPT-5.4 Mini <span class="model-tag">Recomendado</span></div>
+                    <div class="model-desc">Equilibrio entre velocidad, calidad y costo dentro de la familia OpenAI.
+                    </div>
+                    <div class="model-id">gpt-5.4-mini</div>
+                  </div>
+                </div>
+                <div class="model-option" data-provider="openai" data-model="gpt-4o">
+                  <div class="model-radio"></div>
+                  <div class="model-info">
+                    <div class="model-name">GPT-4o</div>
+                    <div class="model-desc">Modelo clásico de OpenAI, buena compatibilidad general.</div>
+                    <div class="model-id">gpt-4o</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="webhooks-label">Funciones de sistema (webhooks)</div>
+          <div class="card">
+            <div class="webhook-row">
+              <div class="webhook-info">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+                  stroke-linejoin="round">
+                  <ellipse cx="12" cy="5" rx="8" ry="3" />
+                  <path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5" />
+                  <path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3" />
+                </svg>
+                <div>
+                  <div class="webhook-title">Consultar catálogo de servicios</div>
+                  <div class="webhook-sub">El bot cita precios y duraciones reales en sus respuestas.</div>
+                </div>
+              </div>
+              <div class="switch-sm" id="toggleCatalogo"></div>
+            </div>
+            <div class="webhook-row">
+              <div class="webhook-info">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+                  stroke-linejoin="round">
+                  <rect x="3" y="5" width="18" height="16" rx="2" />
+                  <line x1="3" y1="10" x2="21" y2="10" />
+                  <path d="m9 15 2 2 4-4" />
+                </svg>
+                <div>
+                  <div class="webhook-title">Agendar cita automática</div>
+                  <div class="webhook-sub">En desarrollo — el bot podrá crear la cita directo en la conversación.</div>
+                </div>
+              </div>
+              <div class="switch-sm" id="toggleAgendaAuto"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ---------- AGENDA ---------- -->
+        <section class="view" id="viewAgenda">
+          <h1 class="view-title">Agenda</h1>
+          <p class="view-subtitle">Citas agendadas por el bot o manualmente.</p>
+
+          <div class="card">
+            <div class="card-header">
+              <h2>Próximas citas</h2>
+              <input type="date" id="filtroFecha"
+                style="width:auto; padding:8px 10px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text);">
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Cliente</th>
+                  <th>Servicio</th>
+                  <th>Fecha</th>
+                  <th>Hora</th>
+                  <th>Estado</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="tablaAgenda"></tbody>
+            </table>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h2>Agendar manualmente</h2>
+            </div>
+            <form id="formCita">
+              <div class="field-row">
+                <div class="field">
+                  <label for="citaTelefono">Teléfono del cliente</label>
+                  <input type="text" id="citaTelefono" required placeholder="+56912345678">
+                </div>
+                <div class="field">
+                  <label for="citaNombre">Nombre del cliente</label>
+                  <input type="text" id="citaNombre">
+                </div>
+              </div>
+              <div class="field">
+                <label for="citaServicio">Servicio</label>
+                <select id="citaServicio" required></select>
+              </div>
+              <div class="field-row">
+                <div class="field">
+                  <label for="citaFecha">Fecha</label>
+                  <input type="date" id="citaFecha" required>
+                </div>
+                <div class="field">
+                  <label for="citaHora">Hora</label>
+                  <input type="time" id="citaHora" required>
+                </div>
+              </div>
+              <button type="submit" class="btn btn-primary">Agendar cita</button>
+            </form>
+          </div>
+        </section>
+
+        <!-- ---------- HISTORIAL ---------- -->
+        <section class="view" id="viewHistorial">
+          <h1 class="view-title">Historial</h1>
+          <p class="view-subtitle">Conversaciones entre el bot y tus clientes.</p>
+
+          <div class="card">
+            <table>
+              <thead>
+                <tr>
+                  <th>Cliente</th>
+                  <th>Teléfono</th>
+                  <th>Mensajes</th>
+                  <th>Estado</th>
+                  <th>Última actividad</th>
+                </tr>
+              </thead>
+              <tbody id="tablaConversaciones"></tbody>
+            </table>
+          </div>
+
+          <div class="card hidden" id="cardMensajes">
+            <div class="card-header">
+              <h2 id="mensajesTitulo">Conversación</h2>
+              <button class="btn btn-sm" id="btnCerrarMensajes">Cerrar</button>
+            </div>
+            <div class="chat-thread" id="chatThread"></div>
+          </div>
+        </section>
+
+      </main>
+    </div>
   </div>
-</div>
 
-<div class="toast-stack" id="toastStack"></div>
+  <div class="toast-stack" id="toastStack"></div>
 
-<script>
-  // En producción (Vercel), el mismo dominio sirve la API y el Dashboard,
-  // así que apuntamos al propio origen. En desarrollo local, si abres
-  // este archivo servido en otro puerto que no sea el del backend, define
-  // window.TREPAI_API_BASE manualmente antes de este script.
-  window.TREPAI_API_BASE = window.location.origin;
-</script>
-<script src="js/api.js"></script>
-<script src="js/app.js"></script>
+  <script>
+    // En producción (Vercel), el mismo dominio sirve la API y el Dashboard,
+    // así que apuntamos al propio origen. En desarrollo local, si abres
+    // este archivo servido en otro puerto que no sea el del backend, define
+    // window.TREPAI_API_BASE manualmente antes de este script.
+    window.TREPAI_API_BASE = window.location.origin;
+  </script>
+  <script src="js/api.js"></script>
+  <script src="js/app.js"></script>
 </body>
-</html>
 
-</body>
 </html>
