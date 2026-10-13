@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from app.models.agenda import Agenda
 from app.models.servicio import Servicio
+from app.services.horario_service import validar_dentro_de_horario
 
 HORAS_VENCIMIENTO_PENDIENTE = 2
 DURACION_POR_DEFECTO_MIN = 30
@@ -118,9 +119,13 @@ def crear_cita_validada(
     servicio: Servicio,
     fecha: date,
     hora: time,
+    horario_negocio: str | None = None,
 ) -> Agenda:
-    """Crea una cita 'pendiente' si el horario está libre. Punto de entrada
-    común para el Dashboard y para el futuro agendado automático por IA."""
+    """Crea una cita 'pendiente' si cae dentro del horario de atención y el
+    espacio está libre. Punto de entrada común para el Dashboard y para el
+    futuro agendado automático por IA. Puede lanzar FueraDeHorarioError o
+    HorarioOcupadoError."""
+    validar_dentro_de_horario(horario_negocio, fecha, hora, duracion_minutos(servicio))
     validar_horario_libre(db, id_negocio, fecha, hora, duracion_minutos(servicio))
 
     cita = Agenda(

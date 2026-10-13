@@ -12,6 +12,7 @@ from app.models.cliente import Cliente
 from app.services.cliente_service import obtener_o_crear_cliente
 from app.services import agenda_service
 from app.services.agenda_service import HorarioOcupadoError
+from app.services.horario_service import FueraDeHorarioError, validar_dentro_de_horario
 from app.schemas.agenda import CitaCreate, CitaEstadoUpdate, CitaResponse
 
 router = APIRouter(prefix="/negocio/{id_negocio}/agenda", tags=["Agenda"])
@@ -76,7 +77,10 @@ def crear_cita(
             servicio=servicio,
             fecha=datos.fecha_cita,
             hora=datos.hora_cita,
+            horario_negocio=negocio.horario,
         )
+    except FueraDeHorarioError as error:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error))
     except HorarioOcupadoError as error:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error))
 
@@ -110,10 +114,15 @@ def actualizar_estado_cita(
     # expirada), hay que comprobar que el espacio siga libre.
     if datos.estado_cita in agenda_service.ESTADOS_QUE_BLOQUEAN and cita.estado_cita not in agenda_service.ESTADOS_QUE_BLOQUEAN:
         try:
+            validar_dentro_de_horario(
+                negocio.horario, cita.fecha_cita, cita.hora_cita, agenda_service.duracion_minutos(servicio)
+            )
             agenda_service.validar_horario_libre(
                 db, negocio.id_negocio, cita.fecha_cita, cita.hora_cita,
                 agenda_service.duracion_minutos(servicio), excluir_id_agenda=cita.id_agenda,
             )
+        except FueraDeHorarioError as error:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error))
         except HorarioOcupadoError as error:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error))
 
