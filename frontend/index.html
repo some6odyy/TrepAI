@@ -6,9 +6,38 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>TrepAI · Dashboard</title>
   <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="css/vista-v2.css">
 </head>
 
 <body>
+
+  <!-- Íconos de las pestañas Agenda e Historial (se usan con <use href="#i-…">) -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <symbol id="i-cal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="5" width="18" height="16" rx="2" /><line x1="3" y1="10" x2="21" y2="10" />
+        <line x1="8" y1="2" x2="8" y2="6" /><line x1="16" y1="2" x2="16" y2="6" />
+      </symbol>
+      <symbol id="i-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+      </symbol>
+      <symbol id="i-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <line x1="6" y1="6" x2="18" y2="18" /><line x1="18" y1="6" x2="6" y2="18" />
+      </symbol>
+      <symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+        <circle cx="11" cy="11" r="7" /><line x1="16.5" y1="16.5" x2="21" y2="21" />
+      </symbol>
+      <symbol id="i-back" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M15 18l-6-6 6-6" />
+      </symbol>
+      <symbol id="i-chat" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 11.5a8.4 8.4 0 0 1-8.9 8.4 8.5 8.5 0 0 1-4-1L3 20l1.1-5a8.4 8.4 0 0 1-1-4A8.4 8.4 0 0 1 11.5 3 8.5 8.5 0 0 1 21 11.5Z" />
+      </symbol>
+      <symbol id="i-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 6h18" /><path d="M8 6V4h8v2" /><path d="M19 6l-1 14H6L5 6" />
+      </symbol>
+    </defs>
+  </svg>
 
   <!-- ============ PANTALLA DE LOGIN / REGISTRO ============ -->
   <div class="auth-screen" id="authScreen">
@@ -499,97 +528,124 @@
             </div>
           </div>
         </section>
-
-        <!-- ---------- AGENDA ---------- -->
-        <section class="view" id="viewAgenda">
-          <h1 class="view-title">Agenda</h1>
-          <p class="view-subtitle">Citas agendadas por el bot o manualmente.</p>
-
-          <div class="card">
-            <div class="card-header">
-              <h2>Próximas citas</h2>
-              <input type="date" id="filtroFecha"
-                style="width:auto; padding:8px 10px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text);">
+        <!-- ---------- AGENDA (línea de tiempo) ---------- -->
+        <section class="view vista-v2" id="viewAgenda">
+          <div class="page-head">
+            <div>
+              <div class="eyebrow">Agenda</div>
+              <h1>Próximas citas</h1>
+              <p class="text-muted">Citas agendadas por el bot o manualmente.</p>
             </div>
-            <table>
-              <thead>
-                <tr>
-                  <th>Cliente</th>
-                  <th>Servicio</th>
-                  <th>Fecha</th>
-                  <th>Hora</th>
-                  <th>Estado</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody id="tablaAgenda"></tbody>
-            </table>
+            <button class="btn btn-primary" id="btnNuevaCita"><svg class="i"><use href="#i-plus" /></svg>Agendar manualmente</button>
           </div>
 
-          <div class="card">
-            <div class="card-header">
-              <h2>Agendar manualmente</h2>
+          <div class="toolbar">
+            <div class="filter-chips" id="filtroEstados">
+              <button class="chip active" data-estado="">Todas <b data-count=""></b></button>
+              <button class="chip" data-estado="pendiente">Pendientes <b data-count="pendiente"></b></button>
+              <button class="chip" data-estado="confirmada">Confirmadas <b data-count="confirmada"></b></button>
+              <button class="chip" data-estado="completada">Completadas <b data-count="completada"></b></button>
+              <button class="chip" data-estado="cancelada">Canceladas <b data-count="cancelada"></b></button>
+              <button class="chip" data-estado="expirada">Expiradas <b data-count="expirada"></b></button>
             </div>
-            <form id="formCita">
-              <div class="field-row">
-                <div class="field">
-                  <label for="citaTelefono">Teléfono del cliente</label>
-                  <input type="text" id="citaTelefono" required placeholder="+56912345678">
+            <div class="date-filter">
+              <button class="btn btn-ghost btn-sm" id="btnHoy">Hoy</button>
+              <input type="date" id="filtroFecha" class="input-sm" aria-label="Filtrar por fecha">
+              <button class="icon-btn hidden" id="btnLimpiarFecha" title="Quitar filtro"><svg class="i"><use href="#i-x" /></svg></button>
+            </div>
+          </div>
+
+          <div class="timeline" id="tablaAgenda"></div>
+        </section>
+
+        <!-- ---------- HISTORIAL (bandeja) ---------- -->
+        <section class="view vista-v2" id="viewHistorial">
+          <div class="page-head">
+            <div>
+              <div class="eyebrow">Historial</div>
+              <h1>Conversaciones</h1>
+              <p class="text-muted">Conversaciones entre el bot y tus clientes.</p>
+            </div>
+          </div>
+
+          <div class="inbox" id="inbox">
+            <aside class="inbox-list">
+              <label class="search">
+                <svg class="i"><use href="#i-search" /></svg>
+                <input type="search" id="buscarConversacion" placeholder="Buscar por nombre o teléfono">
+              </label>
+              <div id="tablaConversaciones" class="conv-list"></div>
+            </aside>
+
+            <section class="inbox-chat" id="cardMensajes">
+              <header class="chat-head">
+                <button class="icon-btn only-mobile" id="btnCerrarMensajes" title="Volver"><svg class="i"><use href="#i-back" /></svg></button>
+                <div class="avatar avatar-sm" id="chatAvatar">?</div>
+                <div>
+                  <b id="mensajesTitulo">Conversación</b>
+                  <small class="text-muted" id="chatSub"></small>
                 </div>
-                <div class="field">
-                  <label for="citaNombre">Nombre del cliente</label>
-                  <input type="text" id="citaNombre">
+              </header>
+              <div class="chat-thread" id="chatThread">
+                <div class="chat-empty">
+                  <svg class="i"><use href="#i-chat" /></svg>
+                  <p>Elige una conversación para leerla.</p>
                 </div>
               </div>
-              <div class="field">
-                <label for="citaServicio">Servicio</label>
-                <select id="citaServicio" required></select>
-              </div>
-              <div class="field-row">
-                <div class="field">
-                  <label for="citaFecha">Fecha</label>
-                  <input type="date" id="citaFecha" required>
-                </div>
-                <div class="field">
-                  <label for="citaHora">Hora</label>
-                  <input type="time" id="citaHora" required>
-                </div>
-              </div>
-              <button type="submit" class="btn btn-primary">Agendar cita</button>
-            </form>
+            </section>
           </div>
         </section>
 
-        <!-- ---------- HISTORIAL ---------- -->
-        <section class="view" id="viewHistorial">
-          <h1 class="view-title">Historial</h1>
-          <p class="view-subtitle">Conversaciones entre el bot y tus clientes.</p>
-
-          <div class="card">
-            <table>
-              <thead>
-                <tr>
-                  <th>Cliente</th>
-                  <th>Teléfono</th>
-                  <th>Mensajes</th>
-                  <th>Estado</th>
-                  <th>Última actividad</th>
-                </tr>
-              </thead>
-              <tbody id="tablaConversaciones"></tbody>
-            </table>
-          </div>
-
-          <div class="card hidden" id="cardMensajes">
-            <div class="card-header">
-              <h2 id="mensajesTitulo">Conversación</h2>
-              <button class="btn btn-sm" id="btnCerrarMensajes">Cerrar</button>
-            </div>
-            <div class="chat-thread" id="chatThread"></div>
-          </div>
-        </section>
-
+      
       </main>
+    </div>
+  </div>
+
+  <!-- Panel lateral: agendar manualmente -->
+  <div class="drawer-backdrop vista-v2" id="drawerCita">
+    <aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="drawerTitulo">
+      <header class="drawer-head">
+        <h2 id="drawerTitulo">Agendar manualmente</h2>
+        <button class="icon-btn" data-close-drawer title="Cerrar"><svg class="i"><use href="#i-x" /></svg></button>
+      </header>
+      <form id="formCita">
+        <div class="field">
+          <label for="citaTelefono">Teléfono del cliente</label>
+          <input type="text" id="citaTelefono" required placeholder="+56912345678">
+        </div>
+        <div class="field">
+          <label for="citaNombre">Nombre del cliente</label>
+          <input type="text" id="citaNombre">
+        </div>
+        <div class="field">
+          <label for="citaServicio">Servicio</label>
+          <select id="citaServicio" required></select>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="citaFecha">Fecha</label>
+            <input type="date" id="citaFecha" required>
+          </div>
+          <div class="field">
+            <label for="citaHora">Hora</label>
+            <input type="time" id="citaHora" required>
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary btn-block">Agendar cita</button>
+      </form>
+    </aside>
+  </div>
+
+  <!-- Diálogo de confirmación -->
+  <div class="modal-backdrop vista-v2" id="modalConfirmar">
+    <div class="modal" role="alertdialog" aria-modal="true" aria-labelledby="confirmTitulo">
+      <div class="modal-icon"><svg class="i"><use href="#i-trash" /></svg></div>
+      <h3 id="confirmTitulo">¿Eliminar?</h3>
+      <p class="text-muted" id="confirmTexto">Esta acción no se puede deshacer.</p>
+      <div class="row-actions">
+        <button class="btn btn-ghost" id="confirmNo">Cancelar</button>
+        <button class="btn btn-danger" id="confirmSi">Eliminar</button>
+      </div>
     </div>
   </div>
 

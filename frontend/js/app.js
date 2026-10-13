@@ -9,6 +9,10 @@ const estado = {
   administrador: null,
   negocio: null,
   servicios: [],
+  citas: [],
+  filtroEstadoCita: '',
+  conversaciones: [],
+  conversacionActiva: null,
 };
 
 /* ---------------------------- Utilidades UI ---------------------------- */
@@ -28,6 +32,49 @@ function formatoCLP(valor) {
 
 function formatoFechaHora(iso) {
   return new Date(iso).toLocaleString('es-CL', { dateStyle: 'short', timeStyle: 'short' });
+}
+
+const $ = (id) => document.getElementById(id);
+const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
+
+function formatoHora(iso) {
+  return new Date(iso).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' });
+}
+
+function fechaLocalISO(d = new Date()) {
+  const z = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}`;
+}
+
+function iniciales(texto) {
+  const partes = String(texto || '?').replace(/[^\p{L}\s]/gu, '').trim().split(/\s+/).filter(Boolean);
+  if (partes.length === 0) return '#';
+  return (partes[0][0] + (partes[1]?.[0] || '')).toUpperCase();
+}
+
+const icono = (id) => `<svg class="i"><use href="#i-${id}"/></svg>`;
+
+/* Diálogo de confirmación propio (evita el confirm() nativo) */
+function confirmar({ titulo = '¿Eliminar?', texto = 'Esta acción no se puede deshacer.', boton = 'Eliminar' } = {}) {
+  return new Promise((resolve) => {
+    const modal = $('modalConfirmar');
+    $('confirmTitulo').textContent = titulo;
+    $('confirmTexto').textContent = texto;
+    $('confirmSi').textContent = boton;
+    modal.classList.add('open');
+    $('confirmSi').focus();
+    const cerrar = (valor) => {
+      modal.classList.remove('open');
+      $('confirmSi').onclick = $('confirmNo').onclick = modal.onclick = null;
+      document.removeEventListener('keydown', onKey);
+      resolve(valor);
+    };
+    const onKey = (e) => { if (e.key === 'Escape') cerrar(false); };
+    $('confirmSi').onclick = () => cerrar(true);
+    $('confirmNo').onclick = () => cerrar(false);
+    modal.onclick = (e) => { if (e.target === modal) cerrar(false); };
+    document.addEventListener('keydown', onKey);
+  });
 }
 
 async function manejarEnvio(formulario, accion) {
@@ -481,51 +528,80 @@ document.getElementById('formServicio').addEventListener('submit', (e) => {
   });
 });
 
-/* -------------------------------- Agenda ---------------------------------- */
+/* ---------------------------------- Agenda ---------------------------------- */
 
 const ESTADOS_CITA = ['pendiente', 'confirmada', 'completada', 'cancelada', 'expirada'];
-const BADGE_POR_ESTADO = {
-  pendiente: 'badge-muted', confirmada: 'badge-success',
-  completada: 'badge-success', cancelada: 'badge-danger',
-  expirada: 'badge-danger',
-};
 
 async function cargarAgenda() {
   if (estado.servicios.length === 0) {
     // Necesitamos el catálogo para el <select> de "agendar manualmente".
     try { await cargarContexto(); } catch (_) { /* se maneja abajo igual */ }
+  } else {
+    actualizarSelectServicios();
   }
   try {
-    const fecha = document.getElementById('filtroFecha').value;
-    const citas = await api.listarCitas(estado.negocio.id_negocio, fecha || null);
-    renderizarAgenda(citas);
+    const fecha = $('filtroFecha').value;
+    $('btnLimpiarFecha').classList.toggle('hidden', !fecha);
+    estado.citas = await api.listarCitas(estado.negocio.id_negocio, fecha || null);
+    renderizarAgenda();
   } catch (error) {
     mostrarToast(error.message, 'error');
   }
 }
 
-function renderizarAgenda(citas) {
-  const tbody = document.getElementById('tablaAgenda');
+function renderizarAgenda() {
+  // Contadores por estado en los chips de filtro
+  $$('#filtroEstados [data-count]').forEach((b) => {
+    const k = b.dataset.count;
+    b.textContent = k ? estado.citas.filter((c) => c.estado_cita === k).length || '' : estado.citas.length || '';
+  });
+
+  const cont = $('tablaAgenda');
+  const citas = estado.citas
+    .filter((c) => !estado.filtroEstadoCita || c.estado_cita === estado.filtroEstadoCita)
+    .sort((a, b) => `${a.fecha_cita}${a.hora_cita}`.localeCompare(`${b.fecha_cita}${b.hora_cita}`));
+
   if (citas.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="6" class="table-empty">No hay citas para mostrar.</td></tr>`;
+    cont.innerHTML = `
+      <div class="empty">
+        ${icono('cal')}
+        <b>Sin citas por aquí</b>
+        <span>No hay citas para mostrar.</span>
+      </div>`;
     return;
   }
-  tbody.innerHTML = citas.map((c) => `
-    <tr>
-      <td>${escapeHtml(c.nombre_cliente || c.telefono_cliente)}</td>
-      <td>${escapeHtml(c.nombre_servicio)}</td>
-      <td class="mono">${c.fecha_cita}</td>
-      <td class="mono">${c.hora_cita.slice(0, 5)}</td>
-      <td>
-        <select class="badge ${BADGE_POR_ESTADO[c.estado_cita] || 'badge-muted'}" style="border:none;" data-cambiar-estado="${c.id_agenda}">
-          ${ESTADOS_CITA.map((e) => `<option value="${e}" ${e === c.estado_cita ? 'selected' : ''}>${e}</option>`).join('')}
-        </select>
-      </td>
-      <td><button class="btn btn-sm btn-danger" data-eliminar-cita="${c.id_agenda}">Eliminar</button></td>
-    </tr>
-  `).join('');
 
-  tbody.querySelectorAll('[data-cambiar-estado]').forEach((select) => {
+  // Agrupar por fecha
+  const grupos = citas.reduce((acc, c) => ((acc[c.fecha_cita] ||= []).push(c), acc), {});
+  const hoy = fechaLocalISO();
+
+  cont.innerHTML = Object.entries(grupos).map(([fecha, lista]) => {
+    const d = new Date(`${fecha}T12:00:00`);
+    return `
+      <div class="day">
+        <div class="day-label ${fecha === hoy ? 'today' : ''}">
+          <div class="day-wd">${fecha === hoy ? 'Hoy' : d.toLocaleDateString('es-CL', { weekday: 'short' })}</div>
+          <div class="day-num">${d.getDate()}</div>
+          <div class="day-mo">${d.toLocaleDateString('es-CL', { month: 'short' })}</div>
+        </div>
+        <div class="day-items">
+          ${lista.map((c) => `
+            <article class="cita st-${c.estado_cita} ${c.estado_cita}">
+              <div class="cita-hora">${c.hora_cita.slice(0, 5)}</div>
+              <div class="cita-who">
+                <b>${escapeHtml(c.nombre_cliente || c.telefono_cliente)}</b>
+                <small>${escapeHtml(c.nombre_servicio)}${c.nombre_cliente ? ` · <span class="mono">${escapeHtml(c.telefono_cliente)}</span>` : ''}</small>
+              </div>
+              <select class="status-select st-${c.estado_cita}" data-cambiar-estado="${c.id_agenda}" aria-label="Estado de la cita">
+                ${ESTADOS_CITA.map((e) => `<option value="${e}" ${e === c.estado_cita ? 'selected' : ''}>${e}</option>`).join('')}
+              </select>
+              <button class="icon-btn danger" data-eliminar-cita="${c.id_agenda}" title="Eliminar">${icono('trash')}</button>
+            </article>`).join('')}
+        </div>
+      </div>`;
+  }).join('');
+
+  $$('[data-cambiar-estado]', cont).forEach((select) => {
     select.addEventListener('change', async () => {
       try {
         await api.actualizarEstadoCita(estado.negocio.id_negocio, select.dataset.cambiarEstado, select.value);
@@ -533,16 +609,19 @@ function renderizarAgenda(citas) {
         cargarAgenda();
       } catch (error) {
         mostrarToast(error.message, 'error');
+        cargarAgenda();
       }
     });
   });
 
-  tbody.querySelectorAll('[data-eliminar-cita]').forEach((btn) => {
+  $$('[data-eliminar-cita]', cont).forEach((btn) => {
     btn.addEventListener('click', async () => {
+      if (!(await confirmar({ titulo: '¿Eliminar esta cita?' }))) return;
       try {
         await api.eliminarCita(estado.negocio.id_negocio, btn.dataset.eliminarCita);
         cargarAgenda();
         mostrarToast('Cita eliminada');
+        cargarEstadisticasResumen();
       } catch (error) {
         mostrarToast(error.message, 'error');
       }
@@ -550,77 +629,133 @@ function renderizarAgenda(citas) {
   });
 }
 
-document.getElementById('filtroFecha').addEventListener('change', cargarAgenda);
+$$('#filtroEstados .chip').forEach((chip) => {
+  chip.addEventListener('click', () => {
+    estado.filtroEstadoCita = chip.dataset.estado;
+    $$('#filtroEstados .chip').forEach((c) => c.classList.toggle('active', c === chip));
+    renderizarAgenda();
+  });
+});
 
-document.getElementById('formCita').addEventListener('submit', (e) => {
+$('filtroFecha').addEventListener('change', cargarAgenda);
+$('btnHoy').addEventListener('click', () => { $('filtroFecha').value = fechaLocalISO(); cargarAgenda(); });
+$('btnLimpiarFecha').addEventListener('click', () => { $('filtroFecha').value = ''; cargarAgenda(); });
+
+/* Drawer "Agendar manualmente" */
+function abrirDrawer() {
+  $('drawerCita').classList.add('open');
+  if (!$('citaFecha').value) $('citaFecha').value = $('filtroFecha').value || fechaLocalISO();
+  setTimeout(() => $('citaTelefono').focus(), 200);
+}
+function cerrarDrawer() { $('drawerCita').classList.remove('open'); }
+
+$('btnNuevaCita').addEventListener('click', abrirDrawer);
+$$('[data-close-drawer]').forEach((b) => b.addEventListener('click', cerrarDrawer));
+$('drawerCita').addEventListener('click', (e) => { if (e.target.id === 'drawerCita') cerrarDrawer(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') cerrarDrawer(); });
+
+$('formCita').addEventListener('submit', (e) => {
   e.preventDefault();
   manejarEnvio(e.target, async () => {
     await api.crearCita(estado.negocio.id_negocio, {
-      telefono_cliente: document.getElementById('citaTelefono').value,
-      nombre_cliente: document.getElementById('citaNombre').value || null,
-      id_servicio: Number(document.getElementById('citaServicio').value),
-      fecha_cita: document.getElementById('citaFecha').value,
-      hora_cita: document.getElementById('citaHora').value,
+      telefono_cliente: $('citaTelefono').value,
+      nombre_cliente: $('citaNombre').value || null,
+      id_servicio: Number($('citaServicio').value),
+      fecha_cita: $('citaFecha').value,
+      hora_cita: $('citaHora').value,
     });
     e.target.reset();
+    cerrarDrawer();
     await cargarAgenda();
     mostrarToast('Cita agendada');
     cargarEstadisticasResumen();
   });
 });
 
-/* ------------------------------- Historial --------------------------------- */
+/* -------------------------------- Historial -------------------------------- */
 
 async function cargarConversaciones() {
   try {
-    const conversaciones = await api.listarConversaciones(estado.negocio.id_negocio);
-    renderizarConversaciones(conversaciones);
+    estado.conversaciones = await api.listarConversaciones(estado.negocio.id_negocio);
+    renderizarConversaciones();
   } catch (error) {
     mostrarToast(error.message, 'error');
   }
 }
 
-function renderizarConversaciones(conversaciones) {
-  const tbody = document.getElementById('tablaConversaciones');
-  if (conversaciones.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="5" class="table-empty">Todavía no hay conversaciones registradas.</td></tr>`;
+function renderizarConversaciones() {
+  const cont = $('tablaConversaciones');
+  const q = $('buscarConversacion').value.trim().toLowerCase();
+  const lista = estado.conversaciones.filter((c) =>
+    !q || (c.nombre_cliente || '').toLowerCase().includes(q) || c.telefono_cliente.includes(q));
+
+  if (estado.conversaciones.length === 0) {
+    cont.innerHTML = `<div class="conv-empty">Todavía no hay conversaciones registradas.</div>`;
     return;
   }
-  tbody.innerHTML = conversaciones.map((c) => `
-    <tr class="conv-row" data-ver-conversacion="${c.id_conversacion}" data-nombre="${escapeHtml(c.nombre_cliente || c.telefono_cliente)}">
-      <td>${escapeHtml(c.nombre_cliente || '(sin nombre)')}</td>
-      <td class="mono">${escapeHtml(c.telefono_cliente)}</td>
-      <td class="mono">${c.total_mensajes}</td>
-      <td><span class="badge badge-muted">${escapeHtml(c.estado)}</span></td>
-      <td class="text-muted">${formatoFechaHora(c.fecha_inicio)}</td>
-    </tr>
-  `).join('');
+  if (lista.length === 0) {
+    cont.innerHTML = `<div class="conv-empty">Sin resultados para "${escapeHtml(q)}".</div>`;
+    return;
+  }
 
-  tbody.querySelectorAll('[data-ver-conversacion]').forEach((fila) => {
-    fila.addEventListener('click', () => abrirMensajes(fila.dataset.verConversacion, fila.dataset.nombre));
+  cont.innerHTML = lista.map((c) => {
+    const nombre = c.nombre_cliente || c.telefono_cliente;
+    return `
+      <button class="conv ${estado.conversacionActiva === c.id_conversacion ? 'active' : ''}" data-ver-conversacion="${c.id_conversacion}">
+        <span class="avatar avatar-sm">${escapeHtml(iniciales(c.nombre_cliente))}</span>
+        <span class="conv-body">
+          <span class="conv-top"><b>${escapeHtml(c.nombre_cliente || '(sin nombre)')}</b><time>${formatoFechaHora(c.fecha_inicio)}</time></span>
+          <span class="conv-bottom">
+            <small>${escapeHtml(c.telefono_cliente)}</small>
+            <span style="display:flex;gap:6px;align-items:center">
+              <span class="pill ${c.estado === 'abierta' ? 'pill-success' : 'pill-muted'}">${escapeHtml(c.estado)}</span>
+              <span class="count" title="Mensajes">${c.total_mensajes}</span>
+            </span>
+          </span>
+        </span>
+      </button>`;
+  }).join('');
+
+  $$('[data-ver-conversacion]', cont).forEach((fila) => {
+    fila.addEventListener('click', () => {
+      const conv = estado.conversaciones.find((c) => String(c.id_conversacion) === fila.dataset.verConversacion);
+      abrirMensajes(conv);
+    });
   });
 }
 
-async function abrirMensajes(idConversacion, nombre) {
+$('buscarConversacion').addEventListener('input', renderizarConversaciones);
+
+async function abrirMensajes(conv) {
   try {
-    const mensajes = await api.listarMensajes(estado.negocio.id_negocio, idConversacion);
-    document.getElementById('mensajesTitulo').textContent = `Conversación con ${nombre}`;
-    document.getElementById('chatThread').innerHTML = mensajes.map((m) => `
-      <div class="chat-bubble ${m.emisor}">
-        ${escapeHtml(m.contenido)}
-        <time>${formatoFechaHora(m.fecha_hora)}</time>
-      </div>
-    `).join('');
-    document.getElementById('cardMensajes').classList.remove('hidden');
-    document.getElementById('cardMensajes').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    const mensajes = await api.listarMensajes(estado.negocio.id_negocio, conv.id_conversacion);
+    estado.conversacionActiva = conv.id_conversacion;
+    const nombre = conv.nombre_cliente || conv.telefono_cliente;
+    $('mensajesTitulo').textContent = `Conversación con ${nombre}`;
+    $('chatSub').textContent = `${conv.telefono_cliente} · ${conv.total_mensajes} mensajes`;
+    $('chatAvatar').textContent = iniciales(conv.nombre_cliente);
+
+    let diaAnterior = '';
+    $('chatThread').innerHTML = mensajes.length === 0
+      ? `<div class="chat-empty">${icono('chat')}<p>Esta conversación no tiene mensajes.</p></div>`
+      : mensajes.map((m, i) => {
+        const dia = new Date(m.fecha_hora).toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' });
+        const separador = dia !== diaAnterior ? `<div class="chat-day">${capitalizar(dia)}</div>` : '';
+        diaAnterior = dia;
+        return `${separador}
+          <div class="bubble ${m.emisor === 'bot' ? 'bot' : 'cliente'}" style="animation-delay:${Math.min(i, 12) * 25}ms">${escapeHtml(m.contenido)}<time>${formatoHora(m.fecha_hora)}</time></div>`;
+      }).join('');
+
+    $('inbox').classList.add('reading');
+    renderizarConversaciones();
+    const hilo = $('chatThread');
+    hilo.scrollTop = hilo.scrollHeight;
   } catch (error) {
     mostrarToast(error.message, 'error');
   }
 }
 
-document.getElementById('btnCerrarMensajes').addEventListener('click', () => {
-  document.getElementById('cardMensajes').classList.add('hidden');
-});
+$('btnCerrarMensajes').addEventListener('click', () => $('inbox').classList.remove('reading'));
 
 /* -------------------------------- Helpers ---------------------------------- */
 
