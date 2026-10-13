@@ -10,6 +10,8 @@ from app.models.agenda import Agenda
 from app.models.servicio import Servicio
 from app.models.cliente import Cliente
 from app.services.cliente_service import obtener_o_crear_cliente
+from app.services import agenda_service
+from app.services.agenda_service import HorarioOcupadoError
 from app.schemas.agenda import CitaCreate, CitaEstadoUpdate, CitaResponse
 
 router = APIRouter(prefix="/negocio/{id_negocio}/agenda", tags=["Agenda"])
@@ -35,6 +37,8 @@ def listar_citas(
     db: Session = Depends(get_db),
     negocio: Negocio = Depends(obtener_negocio_propio),
 ):
+    agenda_service.liberar_pendientes_vencidas(db, negocio.id_negocio)
+
     query = (
         db.query(Agenda, Cliente, Servicio)
         .join(Servicio, Agenda.id_servicio == Servicio.id_servicio)
@@ -64,16 +68,17 @@ def crear_cita(
 
     cliente = obtener_o_crear_cliente(db, datos.telefono_cliente, datos.nombre_cliente)
 
-    nueva_cita = Agenda(
-        id_cliente=cliente.id_cliente,
-        id_servicio=servicio.id_servicio,
-        fecha_cita=datos.fecha_cita,
-        hora_cita=datos.hora_cita,
-        estado_cita="pendiente",
-    )
-    db.add(nueva_cita)
-    db.commit()
-    db.refresh(nueva_cita)
+    try:
+        nueva_cita = agenda_service.crear_cita_validada(
+            db,
+            id_negocio=negocio.id_negocio,
+            id_cliente=cliente.id_cliente,
+            servicio=servicio,
+            fecha=datos.fecha_cita,
+            hora=datos.hora_cita,
+        )
+    except HorarioOcupadoError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error))
 
     return _a_response(nueva_cita, cliente, servicio)
 
@@ -98,7 +103,22 @@ def actualizar_estado_cita(
     db: Session = Depends(get_db),
     negocio: Negocio = Depends(obtener_negocio_propio),
 ):
+    agenda_service.liberar_pendientes_vencidas(db, negocio.id_negocio)
     cita, cliente, servicio = _obtener_cita_propia(id_agenda, db, negocio)
+
+    # Si se reactiva una cita que no estaba ocupando horario (cancelada o
+    # expirada), hay que comprobar que el espacio siga libre.
+    if datos.estado_cita in agenda_service.ESTADOS_QUE_BLOQUEAN and cita.estado_cita not in agenda_service.ESTADOS_QUE_BLOQUEAN:
+        try:
+            agenda_service.validar_horario_libre(
+                db, negocio.id_negocio, cita.fecha_cita, cita.hora_cita,
+                agenda_service.duracion_minutos(servicio), excluir_id_agenda=cita.id_agenda,
+            )
+        except HorarioOcupadoError as error:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error))
+
+    if datos.estado_cita == "pendiente" and cita.estado_cita != "pendiente":
+        cita.fecha_creacion = agenda_service.ahora_utc()  # reinicia las 2 horas
     cita.estado_cita = datos.estado_cita
     db.commit()
     db.refresh(cita)

@@ -4,6 +4,7 @@ Plataforma SaaS que automatiza la atención al cliente de pymes vía
 WhatsApp usando IA (ver informe TSI, Grupo 7).
 """
 from fastapi import FastAPI
+from sqlalchemy import inspect, text
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
@@ -30,6 +31,20 @@ app.add_middleware(
 # Crea las tablas si no existen (para desarrollo local con SQLite).
 # En producción esto se reemplaza por migraciones con Alembic.
 Base.metadata.create_all(bind=engine)
+
+
+def _asegurar_columnas_nuevas():
+    """create_all NO agrega columnas a tablas que ya existen (ej. la BD de
+    Neon en producción). Esto añade agenda.fecha_creacion si falta; las citas
+    antiguas quedan con la fecha de hoy, así que no vencen de golpe."""
+    columnas = {c["name"] for c in inspect(engine).get_columns("agenda")}
+    if "fecha_creacion" not in columnas:
+        with engine.begin() as conexion:
+            conexion.execute(text("ALTER TABLE agenda ADD COLUMN fecha_creacion TIMESTAMP"))
+            conexion.execute(text("UPDATE agenda SET fecha_creacion = CURRENT_TIMESTAMP"))
+
+
+_asegurar_columnas_nuevas()
 
 app.include_router(auth.router)
 app.include_router(negocio.router)

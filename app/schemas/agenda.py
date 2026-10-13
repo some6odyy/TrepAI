@@ -3,7 +3,7 @@ from datetime import date, time
 from typing import Literal
 from pydantic import BaseModel, Field
 
-EstadoCita = Literal["pendiente", "confirmada", "cancelada", "completada"]
+EstadoCita = Literal["pendiente", "confirmada", "cancelada", "completada", "expirada"]
 
 
 class CitaCreate(BaseModel):

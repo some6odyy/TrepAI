@@ -483,10 +483,11 @@ document.getElementById('formServicio').addEventListener('submit', (e) => {
 
 /* -------------------------------- Agenda ---------------------------------- */
 
-const ESTADOS_CITA = ['pendiente', 'confirmada', 'completada', 'cancelada'];
+const ESTADOS_CITA = ['pendiente', 'confirmada', 'completada', 'cancelada', 'expirada'];
 const BADGE_POR_ESTADO = {
   pendiente: 'badge-muted', confirmada: 'badge-success',
   completada: 'badge-success', cancelada: 'badge-danger',
+  expirada: 'badge-danger',
 };
 
 async function cargarAgenda() {
