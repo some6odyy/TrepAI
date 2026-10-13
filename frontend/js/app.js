@@ -257,7 +257,35 @@ async function refrescarEstadoWhatsapp() {
   const badge = document.getElementById('whatsappBadge');
   badge.textContent = info.conectado ? `Conectado (${info.phone_number_id})` : 'Sin conectar';
   badge.className = `badge ${info.conectado ? 'badge-success' : 'badge-muted'}`;
+  // El botón de desvincular solo tiene sentido si hay un número conectado.
+  document.getElementById('btnDesvincularWhatsapp').hidden = !info.conectado;
 }
+
+document.getElementById('btnDesvincularWhatsapp').addEventListener('click', async (e) => {
+  const confirmado = confirm(
+    '¿Desvincular el número de WhatsApp?\n\n'
+    + 'TrepAI dejará de responder mensajes en ese número y el bot quedará apagado. '
+    + 'Puedes volver a conectarlo cuando quieras con el Phone Number ID y el token.'
+  );
+  if (!confirmado) return;
+
+  const boton = e.currentTarget;
+  boton.disabled = true;
+  try {
+    await api.desvincularWhatsapp(estado.negocio.id_negocio);
+    // El backend también apaga el bot: reflejarlo en el interruptor del Resumen.
+    estado.negocio.estado_bot = false;
+    actualizarInterruptorBot(false);
+    document.getElementById('waPhoneId').value = '';
+    document.getElementById('waToken').value = '';
+    await refrescarEstadoWhatsapp();
+    mostrarToast('WhatsApp desvinculado');
+  } catch (error) {
+    mostrarToast(error.message, 'error');
+  } finally {
+    boton.disabled = false;
+  }
+});
 
 document.getElementById('formWhatsapp').addEventListener('submit', (e) => {
   e.preventDefault();

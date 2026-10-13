@@ -10,3 +10,4 @@ deploy/
 .git/
 .gitignore
 pyproject.toml
+scripts/

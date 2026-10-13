@@ -162,6 +162,29 @@ def verificar_historial(headers, id_negocio):
     assert mensajes[1]["emisor"] == "bot"
 
 
+@paso("Desvincular el número de WhatsApp")
+def desvincular_whatsapp(headers, id_negocio):
+    r = requests.delete(f"{BASE_URL}/negocio/{id_negocio}/whatsapp", timeout=TIMEOUT, headers=headers)
+    assert r.status_code == 200, f"esperaba 200, llegó {r.status_code}: {r.text}"
+    assert r.json()["conectado"] is False, "debería quedar desconectado"
+
+    r2 = requests.get(f"{BASE_URL}/negocio/{id_negocio}/whatsapp", timeout=TIMEOUT, headers=headers)
+    assert r2.json() == {"conectado": False, "phone_number_id": None}, f"estado inesperado: {r2.json()}"
+
+    r3 = requests.get(f"{BASE_URL}/negocio/{id_negocio}", timeout=TIMEOUT, headers=headers)
+    assert r3.json()["estado_bot"] is False, "el bot debería quedar apagado al desvincular"
+
+    # Un mensaje que llegue al número ya desvinculado no debe procesarse
+    payload = {
+        "entry": [{"changes": [{"value": {
+            "metadata": {"phone_number_id": "888777666555444"},
+            "messages": [{"from": "56999887766", "text": {"body": "Hola?"}}],
+        }}]}]
+    }
+    r4 = requests.post(f"{BASE_URL}/webhook", timeout=TIMEOUT, json=payload)
+    assert r4.json()["status"] == "negocio_no_encontrado", f"esperaba 'negocio_no_encontrado', llegó {r4.json()}"
+
+
 @paso("Agendar una cita manualmente desde el Dashboard")
 def agendar_cita(headers, id_negocio, id_servicio):
     r = requests.post(
@@ -230,6 +253,8 @@ def main():
             confirmar_cita(headers, id_negocio, id_agenda)
 
     verificar_aislamiento(id_negocio, f"otro{sufijo}@test.cl", "otraClave123")
+    # Al final: así el número de prueba queda libre para la próxima corrida
+    desvincular_whatsapp(headers, id_negocio)
 
     print()
     if fallos:

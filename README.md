@@ -22,6 +22,7 @@ app/
 
 frontend/      -> Dashboard (HTML/CSS/JS vanilla + fetch a la API)
 tests/         -> smoke_test.py: prueba end-to-end con datos de Silvabarber
+scripts/       -> limpiar_bd.py: vacía la BD (cuentas, negocios, números de WhatsApp, etc.)
 deploy/        -> systemd + nginx para el VPS (alternativa al deploy en Vercel)
 
 pyproject.toml -> le dice a Vercel dónde está la app FastAPI
@@ -72,9 +73,28 @@ python tests/smoke_test.py
 
 Recorre el journey completo con datos realistas de Silvabarber: registro,
 negocio, catálogo, contexto, conexión WhatsApp, bot encendido, mensaje
-entrante simulado, verificación del historial, agenda, y aislamiento
-multitenant entre negocios. Es buena práctica correrlo antes de cada
+entrante simulado, verificación del historial, agenda, aislamiento
+multitenant entre negocios y desvinculación del número de WhatsApp (que
+además deja libre el número de prueba para la siguiente corrida). Es buena práctica correrlo antes de cada
 despliegue y después de cualquier cambio grande en los routers.
+
+## Desvincular WhatsApp y limpiar la base de datos
+
+- **Desvincular un número** (por negocio): botón *Desvincular WhatsApp* en
+  Resumen → Conexión con WhatsApp, o `DELETE /negocio/{id}/whatsapp`. Borra
+  el `phone_number_id` y el token cifrado, y apaga el bot. Solo corta la
+  conexión del lado de TrepAI; el número sigue registrado en la app de Meta.
+- **Vaciar la BD completa** (todas las cuentas, negocios, números vinculados,
+  catálogo, conversaciones, citas y clientes). Irreversible, pide escribir
+  `BORRAR` antes de ejecutar:
+
+```powershell
+# PowerShell, apuntando a la BD de producción (Neon)
+$env:DATABASE_URL="postgresql+psycopg://usuario:clave@ep-xxxx.neon.tech/trepai?sslmode=require"
+python -m scripts.limpiar_bd
+```
+
+Sin `DATABASE_URL` usa la del `.env` (o el SQLite local).
 
 ## Mapeo requerimiento -> archivo
 

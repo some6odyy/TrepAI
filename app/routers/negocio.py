@@ -113,3 +113,31 @@ def conectar_whatsapp(
     db.refresh(negocio)
 
     return WhatsAppEstadoResponse(conectado=True, phone_number_id=negocio.whatsapp_phone_number_id)
+
+
+@router.delete("/{id_negocio}/whatsapp", response_model=WhatsAppEstadoResponse)
+def desvincular_whatsapp(
+    db: Session = Depends(get_db),
+    negocio: Negocio = Depends(obtener_negocio_propio),
+):
+    """RF-06 — desvincula el número de WhatsApp del negocio.
+
+    Borra el phone_number_id y el token cifrado de la BD, y apaga el bot
+    (RF-04) para que no quede "encendido" sin un número por el cual
+    responder. Desde este momento el webhook ignora los mensajes que
+    lleguen a ese número (no encuentra a qué negocio pertenecen), y el
+    phone_number_id queda libre para conectarlo a otro negocio.
+
+    Ojo: esto solo corta la conexión del lado de TrepAI. El número sigue
+    registrado en la app de Meta (developers.facebook.com); si se quiere
+    dar de baja allá también, se hace desde ese panel.
+
+    Es idempotente: desvincular un negocio que no tenía número conectado
+    simplemente devuelve conectado=False."""
+    negocio.whatsapp_phone_number_id = None
+    negocio.whatsapp_token = None
+    negocio.estado_bot = False
+    db.commit()
+    db.refresh(negocio)
+
+    return WhatsAppEstadoResponse(conectado=False, phone_number_id=None)
