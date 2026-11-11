@@ -19,9 +19,9 @@ class ContextoIA(Base):
     # "Funciones de sistema" del bloque de Contexto IA en el Dashboard.
     # consultar_catalogo: si está apagado, el prompt NO incluye el catálogo
     # de servicios/precios (efecto real, no decorativo).
-    # agendar_automatico: guardado para cuando el motor de IA pueda crear
-    # citas por sí solo (function calling) — hoy el agendamiento sigue
-    # siendo manual desde el Dashboard; el webhook aún no lo consume.
+    # agendar_automatico: si está encendido, el bot reserva horas por sí solo
+    # (quedan "pendiente" hasta que el administrador las confirme). Ver
+    # app/services/agendado_ia.py.
     consultar_catalogo = Column(Boolean, default=True, nullable=False)
     agendar_automatico = Column(Boolean, default=False, nullable=False)
 

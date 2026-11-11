@@ -12,7 +12,7 @@ from fastapi.responses import RedirectResponse
 from app.db.database import Base, engine
 from app.core.config import CORS_ALLOWED_ORIGINS, BASE_DIR
 from app import models  # noqa: F401 — registra los modelos en Base antes de crear las tablas
-from app.routers import auth, negocio, contexto, webhook, agenda, conversaciones
+from app.routers import auth, negocio, contexto, webhook, agenda, conversaciones, puente
 
 app = FastAPI(
     title="TrepAI",
@@ -52,6 +52,7 @@ app.include_router(contexto.router)
 app.include_router(agenda.router)
 app.include_router(conversaciones.router)
 app.include_router(webhook.router)
+app.include_router(puente.router)  # demo con whatsapp-web.js (desactivado sin PUENTE_TOKEN)
 
 
 @app.get("/")

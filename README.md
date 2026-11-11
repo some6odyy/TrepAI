@@ -23,6 +23,7 @@ app/
 frontend/      -> Dashboard (HTML/CSS/JS vanilla + fetch a la API)
 tests/         -> smoke_test.py: prueba end-to-end con datos de Silvabarber
 scripts/       -> limpiar_bd.py: vacía la BD (cuentas, negocios, números de WhatsApp, etc.)
+bridge/        -> puente de demo con whatsapp-web.js (ver bridge/README.md)
 deploy/        -> systemd + nginx para el VPS (alternativa al deploy en Vercel)
 
 pyproject.toml -> le dice a Vercel dónde está la app FastAPI
@@ -62,6 +63,14 @@ del diccionario de datos.
 La primera vez que inicias sesión en el Dashboard, si tu cuenta no tiene
 ningún negocio creado, se crea uno automáticamente ("Mi negocio") para que
 puedas seguir configurando desde ahí — no queda una pantalla vacía.
+
+## Demo por WhatsApp sin Meta (puente)
+
+Si el número de prueba de la Cloud API no está disponible, la carpeta
+`bridge/` conecta un número normal de WhatsApp escaneando un QR y usa la
+misma lógica del webhook (prompt, IA e historial). Instrucciones en
+[`bridge/README.md`](bridge/README.md). Queda desactivado mientras
+`PUENTE_TOKEN` esté vacío.
 
 ## Pruebas end-to-end
 

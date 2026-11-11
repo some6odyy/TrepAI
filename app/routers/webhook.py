@@ -15,11 +15,7 @@ from app.db.database import get_db
 from app.core.config import WHATSAPP_VERIFY_TOKEN
 from app.core.security import descifrar_texto
 from app.models.negocio import Negocio
-from app.models.contexto_ia import ContextoIA
-from app.models.servicio import Servicio
-from app.models.conversacion import Conversacion, Mensaje
-from app.services import whatsapp_service, ai_service
-from app.services.cliente_service import obtener_o_crear_cliente
+from app.services import whatsapp_service, chat_service
 
 router = APIRouter(prefix="/webhook", tags=["Webhook WhatsApp"])
 
@@ -37,28 +33,6 @@ def verificar_webhook(
     if hub_mode == "subscribe" and hub_verify_token == WHATSAPP_VERIFY_TOKEN:
         return int(hub_challenge)
     return {"error": "Token de verificación inválido"}
-
-
-def _obtener_o_crear_conversacion_abierta(db: Session, id_cliente: int, id_negocio: int) -> Conversacion:
-    """Reutiliza la conversación abierta más reciente con este cliente, o
-    abre una nueva si no hay ninguna (ej. primer contacto, o la anterior
-    ya se cerró)."""
-    conversacion = (
-        db.query(Conversacion)
-        .filter(
-            Conversacion.id_cliente == id_cliente,
-            Conversacion.id_negocio == id_negocio,
-            Conversacion.estado == "abierta",
-        )
-        .order_by(Conversacion.fecha_inicio.desc())
-        .first()
-    )
-    if conversacion is None:
-        conversacion = Conversacion(id_cliente=id_cliente, id_negocio=id_negocio, estado="abierta")
-        db.add(conversacion)
-        db.commit()
-        db.refresh(conversacion)
-    return conversacion
 
 
 @router.post("")
@@ -82,42 +56,8 @@ async def recibir_mensaje(request: Request, db: Session = Depends(get_db)):
     if not negocio.estado_bot:
         return {"status": "bot_inactivo"}
 
-    # 4) Cliente + conversación
-    cliente = obtener_o_crear_cliente(db, telefono_cliente)
-    conversacion = _obtener_o_crear_conversacion_abierta(db, cliente.id_cliente, negocio.id_negocio)
-
-    db.add(Mensaje(id_conversacion=conversacion.id_conversacion, emisor="cliente", contenido=texto_mensaje))
-    db.commit()
-
-    # 5) Armar el prompt con el contexto configurado en RF-03 (RF-07)
-    contexto = db.query(ContextoIA).filter(ContextoIA.id_negocio == negocio.id_negocio).first()
-    catalogo = db.query(Servicio).filter(Servicio.id_negocio == negocio.id_negocio).all()
-
-    prompt = ai_service.armar_prompt(
-        reglas_negocio=contexto.reglas_negocio if contexto else "",
-        instrucciones=contexto.instrucciones if contexto else "",
-        catalogo=[
-            {
-                "nombre_servicio": s.nombre_servicio,
-                "precio": s.precio,
-                "duracion_estimada": s.duracion_estimada,
-            }
-            for s in catalogo
-        ],
-        mensaje_cliente=texto_mensaje,
-        catalogo_habilitado=contexto.consultar_catalogo if contexto else True,
-    )
-
-    # 6) Consultar el modelo de IA (RF-08) — placeholder hasta el paso 7
-    respuesta = ai_service.generar_respuesta(
-        prompt,
-        provider=contexto.ai_provider if contexto else None,
-        model=contexto.ai_model if contexto else None,
-    )
-
-    # 7) Guardar la respuesta del bot en el historial (RF-05)
-    db.add(Mensaje(id_conversacion=conversacion.id_conversacion, emisor="bot", contenido=respuesta))
-    db.commit()
+    # 4-7) Guardar mensaje, prompt dinámico, IA e historial (RF-05/07/08)
+    respuesta = chat_service.procesar_mensaje(db, negocio, telefono_cliente, texto_mensaje)
 
     # 8) Responder al cliente por WhatsApp (RF-09)
     token_whatsapp = descifrar_texto(negocio.whatsapp_token)

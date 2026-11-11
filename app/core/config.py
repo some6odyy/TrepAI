@@ -23,6 +23,13 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 8  # 8 horas
 # porque cada pyme conecta su propio número de WhatsApp Business.
 WHATSAPP_VERIFY_TOKEN = os.getenv("WHATSAPP_VERIFY_TOKEN", "trepai_verify")
 
+# --- Puente de demo con whatsapp-web.js (bridge/) ---
+# Si PUENTE_TOKEN queda vacío, el endpoint /puente no funciona (desactivado).
+PUENTE_TOKEN = os.getenv("PUENTE_TOKEN", "")
+# Negocio que atiende el puente. Vacío = el primer negocio con el bot encendido.
+_puente_id = os.getenv("PUENTE_ID_NEGOCIO", "").strip()
+PUENTE_ID_NEGOCIO = int(_puente_id) if _puente_id.isdigit() else None
+
 # --- Motor de IA (RF-08) ---
 AI_PROVIDER = os.getenv("AI_PROVIDER", "gemini")  # gemini | openai
 AI_API_KEY = os.getenv("AI_API_KEY", "")

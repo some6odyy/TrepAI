@@ -4,3 +4,9 @@ __pycache__/
 *.db
 .venv/
 venv/
+
+# Puente whatsapp-web.js
+bridge/node_modules/
+bridge/.wwebjs_auth/
+bridge/.wwebjs_cache/
+bridge/.env
