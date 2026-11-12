@@ -14,6 +14,7 @@ from app.services import agenda_service
 from app.services.agenda_service import HorarioOcupadoError
 from app.services.horario_service import FueraDeHorarioError, validar_dentro_de_horario
 from app.schemas.agenda import CitaCreate, CitaEstadoUpdate, CitaResponse
+from app.services.notificacion_service import notificar_cita_confirmada
 
 router = APIRouter(prefix="/negocio/{id_negocio}/agenda", tags=["Agenda"])
 
@@ -109,6 +110,7 @@ def actualizar_estado_cita(
 ):
     agenda_service.liberar_pendientes_vencidas(db, negocio.id_negocio)
     cita, cliente, servicio = _obtener_cita_propia(id_agenda, db, negocio)
+    estado_anterior = cita.estado_cita
 
     # Si se reactiva una cita que no estaba ocupando horario (cancelada o
     # expirada), hay que comprobar que el espacio siga libre.
@@ -131,6 +133,10 @@ def actualizar_estado_cita(
     cita.estado_cita = datos.estado_cita
     db.commit()
     db.refresh(cita)
+
+    if datos.estado_cita == "confirmada" and estado_anterior != "confirmada":
+        notificar_cita_confirmada(negocio, cita, cliente, servicio)
+
     return _a_response(cita, cliente, servicio)
 
 
