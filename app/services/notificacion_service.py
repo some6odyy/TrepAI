@@ -10,30 +10,71 @@ from app.models.servicio import Servicio
 logger = logging.getLogger(__name__)
 
 _DIAS = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
+GRAPH_API_VERSION = os.getenv("META_GRAPH_VERSION", "v26.0")
+
 
 def _fecha_legible(fecha) -> str:
     return f"{_DIAS[fecha.weekday()]} {fecha:%d-%m}"
 
 
-def enviar_whatsapp_bridge(telefono: str, texto: str) -> bool:
-    """Envía un mensaje saliente a través del bridge local (whatsapp-web.js)."""
-    puente_token = os.getenv("PUENTE_TOKEN", "").strip()
-    if not puente_token:
+def _obtener_credenciales_meta(negocio: Negocio) -> tuple[str, str]:
+    """Obtiene phone_number_id y access_token desde el modelo Negocio o variables de entorno."""
+    phone_id = (
+        getattr(negocio, "whatsapp_phone_id", None)
+        or getattr(negocio, "phone_number_id", None)
+        or getattr(negocio, "id_telefono_whatsapp", None)
+        or os.getenv("WHATSAPP_PHONE_ID", "")
+    )
+    token = (
+        getattr(negocio, "whatsapp_token", None)
+        or getattr(negocio, "access_token", None)
+        or getattr(negocio, "token_whatsapp", None)
+        or os.getenv("WHATSAPP_TOKEN", "")
+    )
+    return str(phone_id or "").strip(), str(token or "").strip()
+
+
+def enviar_whatsapp_cloud(negocio: Negocio, telefono: str, texto: str) -> bool:
+    phone_id, token = _obtener_credenciales_meta(negocio)
+    if not phone_id or not token:
+        logger.warning(
+            "Negocio %s sin credenciales de WhatsApp Cloud API configuradas",
+            getattr(negocio, "id_negocio", "?"),
+        )
         return False
 
-    bridge_url = os.getenv("PUENTE_URL", "http://127.0.0.1:3001").rstrip("/")
+    telefono_limpio = "".join(ch for ch in (telefono or "") if ch.isdigit())
+    if not telefono_limpio:
+        return False
+
+    url = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{phone_id}/messages"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": telefono_limpio,
+        "type": "text",
+        "text": {"preview_url": False, "body": texto},
+    }
+
     try:
-        resp = requests.post(
-            f"{bridge_url}/enviar",
-            headers={"x-puente-token": puente_token},
-            json={"telefono": telefono, "texto": texto},
-            timeout=10,
-        )
-        resp.raise_for_status()
+        resp = requests.post(url, headers=headers, json=payload, timeout=10)
+        if not resp.ok:
+            logger.warning(
+                "Meta rechazó el envío a %s (%s): %s",
+                telefono_limpio,
+                resp.status_code,
+                resp.text,
+            )
+            return False
         return True
     except Exception as exc:
-        logger.warning("No se pudo enviar WhatsApp a %s vía bridge: %s", telefono, exc)
+        logger.warning("Error de red enviando WhatsApp a %s: %s", telefono_limpio, exc)
         return False
+
 
 def notificar_cita_confirmada(
     negocio: Negocio,
@@ -53,4 +94,4 @@ def notificar_cita_confirmada(
         f"• Cuándo: {cuando}\n"
         f"¡Te esperamos!"
     )
-    return enviar_whatsapp_bridge(cliente.telefono, mensaje)
+    return enviar_whatsapp_cloud(negocio, cliente.telefono, mensaje)
