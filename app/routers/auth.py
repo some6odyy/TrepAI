@@ -1,11 +1,18 @@
 """RF-01 | Autenticación: registro, login y recuperación de contraseña."""
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-
+from pydantic import BaseModel, EmailStr, Field
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from sqlalchemy.orm import Session
 from app.db.database import get_db
 from app.core.security import hashear_contrasena, verificar_contrasena, crear_access_token
 from app.core.deps import obtener_administrador_actual
 from app.models.administrador import Administrador
+from app.services.recuperacion import (
+    enviar_correo_recuperacion,
+    generar_token_recuperacion,
+    verificar_token_recuperacion,
+)
 from app.schemas.auth import (
     RegistroRequest,
     LoginRequest,
@@ -13,6 +20,7 @@ from app.schemas.auth import (
     AdministradorResponse,
     TokenResponse,
 )
+
 
 router = APIRouter(prefix="/auth", tags=["Autenticación"])
 
@@ -76,3 +84,63 @@ def obtener_perfil_propio(administrador_actual: Administrador = Depends(obtener_
     """Endpoint de ejemplo para probar que el token funciona: devuelve los
     datos del administrador dueño del token enviado."""
     return administrador_actual
+
+class ForgotPasswordRequest(BaseModel):
+    correo: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str = Field(min_length=10)
+    nueva_contrasena: str = Field(min_length=8, max_length=128)
+
+
+@router.post("/forgot-password")
+def solicitar_recuperacion(
+    datos: ForgotPasswordRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    correo_norm = datos.correo.strip().lower()
+    admin = db.query(Administrador).filter(Administrador.correo == correo_norm).first()
+
+    if admin is not None:
+        hash_actual = getattr(admin, "contraseña", None) or getattr(admin, "contrasena", "")
+        token = generar_token_recuperacion(admin.correo, hash_actual)
+        background_tasks.add_task(enviar_correo_recuperacion, admin.correo, admin.nombre, token)
+
+    # Respuesta genérica para no revelar si el correo existe (RF-01)
+    return {"detail": "Si el correo está registrado, recibirás un enlace para restablecer tu contraseña."}
+
+
+@router.post("/reset-password")
+def restablecer_contrasena(
+    datos: ResetPasswordRequest,
+    db: Session = Depends(get_db),
+):
+    payload = verificar_token_recuperacion(datos.token)
+    if payload is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El enlace de recuperación es inválido o ya expiró.",
+        )
+
+    admin = db.query(Administrador).filter(Administrador.correo == payload["sub"]).first()
+    if admin is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Enlace inválido.")
+
+    hash_actual = getattr(admin, "contraseña", None) or getattr(admin, "contrasena", "")
+    if (hash_actual or "")[-12:] != payload.get("fp"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Este enlace ya fue utilizado.",
+        )
+
+    # Reemplaza `hashear_contrasena` por el helper bcrypt que ya usas en auth.py
+    nuevo_hash = hashear_contrasena(datos.nueva_contrasena)
+    if hasattr(admin, "contraseña"):
+        admin.contraseña = nuevo_hash
+    else:
+        admin.contrasena = nuevo_hash
+
+    db.commit()
+    return {"detail": "Contraseña actualizada correctamente. Ya puedes iniciar sesión."}

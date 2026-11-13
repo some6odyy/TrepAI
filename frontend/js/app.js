@@ -768,14 +768,149 @@ function escapeHtml(texto) {
 /* -------------------------------- Arranque ---------------------------------- */
 
 (async function iniciar() {
+  const params = new URLSearchParams(window.location.search);
+  const resetToken = params.get('reset_token');
+
+  // Si viene desde un enlace de recuperación, mostramos el login/reset sin auto-entrar al dashboard
+  if (resetToken) {
+    mostrarPantallaLogin();
+    initRecuperacionPassword(resetToken);
+    return;
+  }
+
+  initRecuperacionPassword(null);
+
   if (Auth.getToken()) {
     try {
       await iniciarSesionExitosa();
       return;
     } catch (_) {
-      // El token guardado ya no sirve — apiFetch ya limpió el token y
-      // llamó a mostrarPantallaLogin() por el manejo del 401.
+      // El token guardado ya no sirve — apiFetch ya limpió el token.
     }
   }
   mostrarPantallaLogin();
 })();
+
+function initRecuperacionPassword(resetToken) {
+  const authTabs = document.getElementById('authTabs');
+  const authError = document.getElementById('authError');
+  const formLogin = document.getElementById('formLogin');
+  const formRegistro = document.getElementById('formRegistro');
+  const formForgot = document.getElementById('formForgot');
+  const formReset = document.getElementById('formReset');
+
+  function limpiarEstilosAviso() {
+    if (!authError) return;
+    authError.style.background = '';
+    authError.style.color = '';
+    authError.style.borderColor = '';
+  }
+
+  function mostrarAviso(texto, esExito = false) {
+    if (!authError) return mostrarToast(texto, esExito ? 'info' : 'error');
+    authError.textContent = texto;
+    authError.classList.remove('hidden');
+    if (esExito) {
+      authError.style.background = '#e6f4ea';
+      authError.style.color = '#1e7e34';
+      authError.style.borderColor = '#b7dfb9';
+    } else {
+      limpiarEstilosAviso();
+    }
+  }
+
+  function ocultarAviso() {
+    limpiarEstilosAviso();
+    if (authError) authError.classList.add('hidden');
+  }
+
+  if (resetToken && formReset) {
+    authTabs?.classList.add('hidden');
+    formLogin?.classList.add('hidden');
+    formRegistro?.classList.add('hidden');
+    formForgot?.classList.add('hidden');
+    formReset.classList.remove('hidden');
+  }
+
+  document.querySelectorAll('.auth-tab').forEach((tab) => {
+    tab.addEventListener('click', () => {
+      ocultarAviso();
+      formForgot?.classList.add('hidden');
+      formReset?.classList.add('hidden');
+    });
+  });
+
+  document.getElementById('linkOlvideClave')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    ocultarAviso();
+    formLogin?.classList.add('hidden');
+    formRegistro?.classList.add('hidden');
+    formForgot?.classList.remove('hidden');
+  });
+
+  document.getElementById('linkVolverLogin')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    ocultarAviso();
+    formForgot?.classList.add('hidden');
+    formLogin?.classList.remove('hidden');
+  });
+
+  formForgot?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    ocultarAviso();
+    const correo = document.getElementById('forgotCorreo').value.trim();
+    const btn = formForgot.querySelector("button[type='submit']");
+    if (btn) btn.disabled = true;
+
+    try {
+      const res = await fetch('/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ correo }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        mostrarAviso(data.detail || 'No se pudo procesar la solicitud.');
+      } else {
+        mostrarAviso(data.detail || 'Revisa tu correo para continuar.', true);
+        formForgot.reset();
+      }
+    } catch (_) {
+      mostrarAviso('Error de conexión con el servidor.');
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  });
+
+  formReset?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    ocultarAviso();
+    const p1 = document.getElementById('resetPass').value;
+    const p2 = document.getElementById('resetPassConfirm').value;
+    if (p1 !== p2) return mostrarAviso('Las contraseñas no coinciden.');
+
+    const btn = formReset.querySelector("button[type='submit']");
+    if (btn) btn.disabled = true;
+
+    try {
+      const res = await fetch('/auth/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: resetToken, nueva_contrasena: p1 }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        mostrarAviso(data.detail || 'El enlace es inválido o ya expiró.');
+      } else {
+        mostrarAviso(data.detail || 'Contraseña actualizada.', true);
+        setTimeout(() => {
+          window.location.href = '/dashboard/';
+        }, 1500);
+      }
+    } catch (_) {
+      mostrarAviso('Error de conexión con el servidor.');
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  });
+}
