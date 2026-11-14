@@ -6,6 +6,7 @@ from app.models.agenda import Agenda
 from app.models.cliente import Cliente
 from app.models.negocio import Negocio
 from app.models.servicio import Servicio
+from app.core.security import descifrar_texto
 
 logger = logging.getLogger(__name__)
 
@@ -22,10 +23,13 @@ def _obtener_credenciales_meta(negocio: Negocio) -> tuple[str, str]:
         getattr(negocio, "whatsapp_phone_number_id", None)
         or os.getenv("WHATSAPP_PHONE_ID", "")
     )
-    token = (
-        getattr(negocio, "whatsapp_token", None)
-        or os.getenv("WHATSAPP_TOKEN", "")
-    )
+    raw_token = (getattr(negocio, "whatsapp_token", None) or "").strip()
+    if raw_token.startswith("EAA"):
+        token = raw_token
+    elif raw_token:
+        token = descifrar_texto(raw_token) or raw_token
+    else:
+        token = os.getenv("WHATSAPP_TOKEN", "")
     return str(phone_id or "").strip(), str(token or "").strip()
 
 
