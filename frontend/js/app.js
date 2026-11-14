@@ -310,134 +310,143 @@ async function refrescarEstadoWhatsapp() {
   if (btnDesvincular) {
     btnDesvincular.hidden = !info.conectado;
   }
-}
-
-document.getElementById('btnDesvincularWhatsapp')?.addEventListener('click', async (e) => {
-  const confirmado = await confirmar({
-    titulo: '¿Desvincular WhatsApp?',
-    texto: 'TrepAI dejará de responder mensajes en este número y el bot quedará apagado.',
-    boton: 'Desvincular',
-  });
-  if (!confirmado) return;
-
-  const boton = e.currentTarget;
-  boton.disabled = true;
-  try {
-    await api.desvincularWhatsapp(estado.negocio.id_negocio);
-    estado.negocio.estado_bot = false;
-    actualizarInterruptorBot(false);
-    document.getElementById('formWhatsapp')?.reset();
-    reiniciarFormularioWhatsapp();
-    await refrescarEstadoWhatsapp();
-    mostrarToast('WhatsApp desvinculado');
-  } catch (error) {
-    mostrarToast(error.message, 'error');
-  } finally {
-    boton.disabled = false;
+  const formWa = document.getElementById('formWhatsapp');
+  if (formWa) {
+    formWa.hidden = info.conectado;
+    if (!info.conectado) {
+      const inputNombre = document.getElementById('waNombreVisible');
+      if (inputNombre && !inputNombre.value) {
+        inputNombre.value = estado.negocio.nombre_negocio || '';
+      }
+    }
   }
-});
 
-let pasoVerificacionSms = false;
+  document.getElementById('btnDesvincularWhatsapp')?.addEventListener('click', async (e) => {
+    const confirmado = await confirmar({
+      titulo: '¿Desvincular WhatsApp?',
+      texto: 'TrepAI dejará de responder mensajes en este número y el bot quedará apagado.',
+      boton: 'Desvincular',
+    });
+    if (!confirmado) return;
 
-function reiniciarFormularioWhatsapp() {
-  pasoVerificacionSms = false;
-  const pasoCodigo = document.getElementById('pasoCodigoSms');
-  const btnSubmit = document.querySelector('#formWhatsapp button[type="submit"]');
-  if (pasoCodigo) pasoCodigo.classList.add('hidden');
-  if (btnSubmit) btnSubmit.textContent = 'Enviar código SMS';
-  const inputCodigo = document.getElementById('waCodigoSms');
-  if (inputCodigo) inputCodigo.value = '';
-}
-
-document.getElementById('btnDesvincularWhatsapp').addEventListener('click', async (e) => {
-  const confirmado = await confirmar({
-    titulo: '¿Desvincular WhatsApp?',
-    texto: 'TrepAI dejará de responder mensajes en este número y el bot quedará apagado.',
-    boton: 'Desvincular',
+    const boton = e.currentTarget;
+    boton.disabled = true;
+    try {
+      await api.desvincularWhatsapp(estado.negocio.id_negocio);
+      estado.negocio.estado_bot = false;
+      actualizarInterruptorBot(false);
+      document.getElementById('formWhatsapp')?.reset();
+      reiniciarFormularioWhatsapp();
+      await refrescarEstadoWhatsapp();
+      mostrarToast('WhatsApp desvinculado');
+    } catch (error) {
+      mostrarToast(error.message, 'error');
+    } finally {
+      boton.disabled = false;
+    }
   });
-  if (!confirmado) return;
 
-  const boton = e.currentTarget;
-  boton.disabled = true;
-  try {
-    await api.desvincularWhatsapp(estado.negocio.id_negocio);
-    estado.negocio.estado_bot = false;
-    actualizarInterruptorBot(false);
-    document.getElementById('formWhatsapp').reset();
-    reiniciarFormularioWhatsapp();
-    await refrescarEstadoWhatsapp();
-    mostrarToast('WhatsApp desvinculado');
-  } catch (error) {
-    mostrarToast(error.message, 'error');
-  } finally {
-    boton.disabled = false;
+  let pasoVerificacionSms = false;
+
+  function reiniciarFormularioWhatsapp() {
+    pasoVerificacionSms = false;
+    const pasoCodigo = document.getElementById('pasoCodigoSms');
+    const btnSubmit = document.querySelector('#formWhatsapp button[type="submit"]');
+    if (pasoCodigo) pasoCodigo.classList.add('hidden');
+    if (btnSubmit) btnSubmit.textContent = 'Enviar código SMS';
+    const inputCodigo = document.getElementById('waCodigoSms');
+    if (inputCodigo) inputCodigo.value = '';
   }
-});
 
-document.getElementById('formWhatsapp').addEventListener('submit', (e) => {
-  e.preventDefault();
-  manejarEnvio(e.target, async () => {
-    const idNegocio = estado.negocio.id_negocio;
+  document.getElementById('btnDesvincularWhatsapp').addEventListener('click', async (e) => {
+    const confirmado = await confirmar({
+      titulo: '¿Desvincular WhatsApp?',
+      texto: 'TrepAI dejará de responder mensajes en este número y el bot quedará apagado.',
+      boton: 'Desvincular',
+    });
+    if (!confirmado) return;
 
-    if (!pasoVerificacionSms) {
-      // Paso 1: registrar número en Meta y pedir SMS de 6 dígitos
-      const telefono = document.getElementById('waTelefono').value.trim();
-      const nombreVisible = document.getElementById('waNombreVisible').value.trim() || estado.negocio.nombre_negocio;
+    const boton = e.currentTarget;
+    boton.disabled = true;
+    try {
+      await api.desvincularWhatsapp(estado.negocio.id_negocio);
+      estado.negocio.estado_bot = false;
+      actualizarInterruptorBot(false);
+      document.getElementById('formWhatsapp').reset();
+      reiniciarFormularioWhatsapp();
+      await refrescarEstadoWhatsapp();
+      mostrarToast('WhatsApp desvinculado');
+    } catch (error) {
+      mostrarToast(error.message, 'error');
+    } finally {
+      boton.disabled = false;
+    }
+  });
 
-      await api.solicitarCodigoWhatsapp(idNegocio, {
-        telefono,
-        nombre_visible: nombreVisible,
-      });
+  document.getElementById('formWhatsapp').addEventListener('submit', (e) => {
+    e.preventDefault();
+    manejarEnvio(e.target, async () => {
+      const idNegocio = estado.negocio.id_negocio;
 
-      pasoVerificacionSms = true;
-      document.getElementById('pasoCodigoSms').classList.remove('hidden');
-      e.target.querySelector('button[type="submit"]').textContent = 'Verificar y conectar';
-      document.getElementById('waCodigoSms').focus();
-      mostrarToast('Te enviamos un SMS con un código de 6 dígitos');
+      if (!pasoVerificacionSms) {
+        // Paso 1: registrar número en Meta y pedir SMS de 6 dígitos
+        const telefono = document.getElementById('waTelefono').value.trim();
+        const nombreVisible = document.getElementById('waNombreVisible').value.trim() || estado.negocio.nombre_negocio;
+
+        await api.solicitarCodigoWhatsapp(idNegocio, {
+          telefono,
+          nombre_visible: nombreVisible,
+        });
+
+        pasoVerificacionSms = true;
+        document.getElementById('pasoCodigoSms').classList.remove('hidden');
+        e.target.querySelector('button[type="submit"]').textContent = 'Verificar y conectar';
+        document.getElementById('waCodigoSms').focus();
+        mostrarToast('Te enviamos un SMS con un código de 6 dígitos');
+        return;
+      }
+
+      // Paso 2: confirmar código SMS y activar el bot
+      const codigo = document.getElementById('waCodigoSms').value.trim();
+      await api.verificarCodigoWhatsapp(idNegocio, { codigo });
+
+      estado.negocio.estado_bot = true;
+      actualizarInterruptorBot(true);
+      reiniciarFormularioWhatsapp();
+      await refrescarEstadoWhatsapp();
+      mostrarToast('¡WhatsApp conectado y bot encendido!');
+    });
+  });
+
+  document.getElementById('btnReenviarCodigo')?.addEventListener('click', () => {
+    reiniciarFormularioWhatsapp();
+    document.getElementById('formWhatsapp').requestSubmit();
+  });
+
+  /* --------------------------- Contexto IA --------------------------------- */
+
+  async function cargarContexto() {
+    try {
+      const contexto = await api.obtenerContexto(estado.negocio.id_negocio);
+      document.getElementById('ctxReglas').value = contexto.reglas_negocio || '';
+      document.getElementById('ctxInstrucciones').value = contexto.instrucciones || '';
+      estado.servicios = contexto.servicios || [];
+      renderizarServicios();
+      actualizarToggleSistema('toggleCatalogo', contexto.consultar_catalogo);
+      actualizarToggleSistema('toggleAgendaAuto', contexto.agendar_automatico);
+      seleccionarMotorIa(contexto.ai_provider, contexto.ai_model);
+    } catch (error) {
+      mostrarToast(error.message, 'error');
+    }
+  }
+
+  function renderizarServicios() {
+    const tbody = document.getElementById('tablaServicios');
+    if (estado.servicios.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="4" class="table-empty">Todavía no agregas servicios al catálogo.</td></tr>`;
       return;
     }
-
-    // Paso 2: confirmar código SMS y activar el bot
-    const codigo = document.getElementById('waCodigoSms').value.trim();
-    await api.verificarCodigoWhatsapp(idNegocio, { codigo });
-
-    estado.negocio.estado_bot = true;
-    actualizarInterruptorBot(true);
-    reiniciarFormularioWhatsapp();
-    await refrescarEstadoWhatsapp();
-    mostrarToast('¡WhatsApp conectado y bot encendido!');
-  });
-});
-
-document.getElementById('btnReenviarCodigo')?.addEventListener('click', () => {
-  reiniciarFormularioWhatsapp();
-  document.getElementById('formWhatsapp').requestSubmit();
-});
-
-/* --------------------------- Contexto IA --------------------------------- */
-
-async function cargarContexto() {
-  try {
-    const contexto = await api.obtenerContexto(estado.negocio.id_negocio);
-    document.getElementById('ctxReglas').value = contexto.reglas_negocio || '';
-    document.getElementById('ctxInstrucciones').value = contexto.instrucciones || '';
-    estado.servicios = contexto.servicios || [];
-    renderizarServicios();
-    actualizarToggleSistema('toggleCatalogo', contexto.consultar_catalogo);
-    actualizarToggleSistema('toggleAgendaAuto', contexto.agendar_automatico);
-    seleccionarMotorIa(contexto.ai_provider, contexto.ai_model);
-  } catch (error) {
-    mostrarToast(error.message, 'error');
-  }
-}
-
-function renderizarServicios() {
-  const tbody = document.getElementById('tablaServicios');
-  if (estado.servicios.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="4" class="table-empty">Todavía no agregas servicios al catálogo.</td></tr>`;
-    return;
-  }
-  tbody.innerHTML = estado.servicios.map((s) => `
+    tbody.innerHTML = estado.servicios.map((s) => `
     <tr>
       <td>${escapeHtml(s.nombre_servicio)}${s.descripcion ? `<br><span class="text-muted" style="font-size:12px">${escapeHtml(s.descripcion)}</span>` : ''}</td>
       <td class="mono">${formatoCLP(s.precio)}</td>
@@ -446,205 +455,205 @@ function renderizarServicios() {
     </tr>
   `).join('');
 
-  tbody.querySelectorAll('[data-eliminar-servicio]').forEach((btn) => {
-    btn.addEventListener('click', async () => {
+    tbody.querySelectorAll('[data-eliminar-servicio]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        try {
+          await api.eliminarServicio(estado.negocio.id_negocio, btn.dataset.eliminarServicio);
+          await cargarContexto();
+          actualizarSelectServicios();
+          mostrarToast('Servicio eliminado');
+        } catch (error) {
+          mostrarToast(error.message, 'error');
+        }
+      });
+    });
+
+    actualizarSelectServicios();
+  }
+
+  function actualizarSelectServicios() {
+    const select = document.getElementById('citaServicio');
+    select.innerHTML = estado.servicios.map((s) =>
+      `<option value="${s.id_servicio}">${escapeHtml(s.nombre_servicio)} — ${formatoCLP(s.precio)}</option>`
+    ).join('') || '<option disabled selected>Agrega un servicio primero</option>';
+  }
+
+  document.getElementById('formPersonificacion').addEventListener('submit', (e) => {
+    e.preventDefault();
+    manejarEnvio(e.target, async () => {
+      await api.actualizarContexto(estado.negocio.id_negocio, {
+        instrucciones: document.getElementById('ctxInstrucciones').value,
+      });
+      mostrarToast('Personificación guardada');
+    });
+  });
+
+  document.getElementById('formReglas').addEventListener('submit', (e) => {
+    e.preventDefault();
+    manejarEnvio(e.target, async () => {
+      await api.actualizarContexto(estado.negocio.id_negocio, {
+        reglas_negocio: document.getElementById('ctxReglas').value,
+      });
+      mostrarToast('Reglas del local guardadas');
+    });
+  });
+
+  /* ---- Arquitectura del Asistente: bloques (acordeón) ---- */
+
+  const PANEL_POR_BLOQUE = { personificacion: 'panelPersonificacion', catalogo: 'panelCatalogo', reglas: 'panelReglas', motorIa: 'panelMotorIa' };
+
+  document.querySelectorAll('.block-card[data-block]').forEach((card) => {
+    card.addEventListener('click', () => {
+      const panelId = PANEL_POR_BLOQUE[card.dataset.block];
+      const yaAbierto = card.classList.contains('open');
+
+      document.querySelectorAll('.block-card[data-block]').forEach((c) => c.classList.remove('open'));
+      document.querySelectorAll('.accordion-panel').forEach((p) => p.classList.remove('open'));
+
+      if (!yaAbierto) {
+        card.classList.add('open');
+        document.getElementById(panelId).classList.add('open');
+        document.getElementById(panelId).scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    });
+  });
+
+  document.getElementById('btnAnadirBloque').addEventListener('click', () => {
+    mostrarToast('Los bloques personalizados llegan en una próxima versión');
+  });
+
+  /* ---- Funciones de sistema (webhooks) ---- */
+
+  function actualizarToggleSistema(id, activo) {
+    document.getElementById(id).classList.toggle('on', !!activo);
+  }
+
+  function conectarToggleSistema(id, campo, etiqueta) {
+    const el = document.getElementById(id);
+    el.addEventListener('click', async () => {
+      const nuevoValor = !el.classList.contains('on');
+      el.classList.toggle('on', nuevoValor); // respuesta visual inmediata
       try {
-        await api.eliminarServicio(estado.negocio.id_negocio, btn.dataset.eliminarServicio);
-        await cargarContexto();
-        actualizarSelectServicios();
-        mostrarToast('Servicio eliminado');
+        await api.actualizarContexto(estado.negocio.id_negocio, { [campo]: nuevoValor });
+        mostrarToast(`${etiqueta} ${nuevoValor ? 'activado' : 'desactivado'}`);
       } catch (error) {
+        el.classList.toggle('on', !nuevoValor); // revertir si falló
+        mostrarToast(error.message, 'error');
+      }
+    });
+  }
+
+  conectarToggleSistema('toggleCatalogo', 'consultar_catalogo', 'Consultar catálogo');
+  conectarToggleSistema('toggleAgendaAuto', 'agendar_automatico', 'Agendar cita automática');
+
+  /* ---- Motor de IA: proveedor + modelo ---- */
+
+  document.querySelectorAll('.provider-tab').forEach((tab) => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.provider-tab').forEach((t) => t.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById('listaModelosGemini').classList.toggle('hidden', tab.dataset.provider !== 'gemini');
+      document.getElementById('listaModelosOpenai').classList.toggle('hidden', tab.dataset.provider !== 'openai');
+    });
+  });
+
+  function seleccionarMotorIa(provider, model) {
+    document.querySelectorAll('.provider-tab').forEach((t) => t.classList.toggle('active', t.dataset.provider === provider));
+    document.getElementById('listaModelosGemini').classList.toggle('hidden', provider !== 'gemini');
+    document.getElementById('listaModelosOpenai').classList.toggle('hidden', provider !== 'openai');
+    document.querySelectorAll('.model-option').forEach((opt) => {
+      opt.classList.toggle('selected', opt.dataset.provider === provider && opt.dataset.model === model);
+    });
+  }
+
+  document.querySelectorAll('.model-option').forEach((opt) => {
+    opt.addEventListener('click', async () => {
+      if (opt.classList.contains('selected')) return;
+
+      const anterior = document.querySelector('.model-option.selected');
+      document.querySelectorAll('.model-option').forEach((o) => o.classList.remove('selected'));
+      opt.classList.add('selected'); // respuesta visual inmediata
+
+      try {
+        await api.actualizarContexto(estado.negocio.id_negocio, {
+          ai_provider: opt.dataset.provider,
+          ai_model: opt.dataset.model,
+        });
+        mostrarToast(`Motor de IA actualizado a ${opt.querySelector('.model-name').firstChild.textContent.trim()}`);
+      } catch (error) {
+        opt.classList.remove('selected');
+        if (anterior) anterior.classList.add('selected');
         mostrarToast(error.message, 'error');
       }
     });
   });
 
-  actualizarSelectServicios();
-}
-
-function actualizarSelectServicios() {
-  const select = document.getElementById('citaServicio');
-  select.innerHTML = estado.servicios.map((s) =>
-    `<option value="${s.id_servicio}">${escapeHtml(s.nombre_servicio)} — ${formatoCLP(s.precio)}</option>`
-  ).join('') || '<option disabled selected>Agrega un servicio primero</option>';
-}
-
-document.getElementById('formPersonificacion').addEventListener('submit', (e) => {
-  e.preventDefault();
-  manejarEnvio(e.target, async () => {
-    await api.actualizarContexto(estado.negocio.id_negocio, {
-      instrucciones: document.getElementById('ctxInstrucciones').value,
-    });
-    mostrarToast('Personificación guardada');
-  });
-});
-
-document.getElementById('formReglas').addEventListener('submit', (e) => {
-  e.preventDefault();
-  manejarEnvio(e.target, async () => {
-    await api.actualizarContexto(estado.negocio.id_negocio, {
-      reglas_negocio: document.getElementById('ctxReglas').value,
-    });
-    mostrarToast('Reglas del local guardadas');
-  });
-});
-
-/* ---- Arquitectura del Asistente: bloques (acordeón) ---- */
-
-const PANEL_POR_BLOQUE = { personificacion: 'panelPersonificacion', catalogo: 'panelCatalogo', reglas: 'panelReglas', motorIa: 'panelMotorIa' };
-
-document.querySelectorAll('.block-card[data-block]').forEach((card) => {
-  card.addEventListener('click', () => {
-    const panelId = PANEL_POR_BLOQUE[card.dataset.block];
-    const yaAbierto = card.classList.contains('open');
-
-    document.querySelectorAll('.block-card[data-block]').forEach((c) => c.classList.remove('open'));
-    document.querySelectorAll('.accordion-panel').forEach((p) => p.classList.remove('open'));
-
-    if (!yaAbierto) {
-      card.classList.add('open');
-      document.getElementById(panelId).classList.add('open');
-      document.getElementById(panelId).scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }
-  });
-});
-
-document.getElementById('btnAnadirBloque').addEventListener('click', () => {
-  mostrarToast('Los bloques personalizados llegan en una próxima versión');
-});
-
-/* ---- Funciones de sistema (webhooks) ---- */
-
-function actualizarToggleSistema(id, activo) {
-  document.getElementById(id).classList.toggle('on', !!activo);
-}
-
-function conectarToggleSistema(id, campo, etiqueta) {
-  const el = document.getElementById(id);
-  el.addEventListener('click', async () => {
-    const nuevoValor = !el.classList.contains('on');
-    el.classList.toggle('on', nuevoValor); // respuesta visual inmediata
-    try {
-      await api.actualizarContexto(estado.negocio.id_negocio, { [campo]: nuevoValor });
-      mostrarToast(`${etiqueta} ${nuevoValor ? 'activado' : 'desactivado'}`);
-    } catch (error) {
-      el.classList.toggle('on', !nuevoValor); // revertir si falló
-      mostrarToast(error.message, 'error');
-    }
-  });
-}
-
-conectarToggleSistema('toggleCatalogo', 'consultar_catalogo', 'Consultar catálogo');
-conectarToggleSistema('toggleAgendaAuto', 'agendar_automatico', 'Agendar cita automática');
-
-/* ---- Motor de IA: proveedor + modelo ---- */
-
-document.querySelectorAll('.provider-tab').forEach((tab) => {
-  tab.addEventListener('click', () => {
-    document.querySelectorAll('.provider-tab').forEach((t) => t.classList.remove('active'));
-    tab.classList.add('active');
-    document.getElementById('listaModelosGemini').classList.toggle('hidden', tab.dataset.provider !== 'gemini');
-    document.getElementById('listaModelosOpenai').classList.toggle('hidden', tab.dataset.provider !== 'openai');
-  });
-});
-
-function seleccionarMotorIa(provider, model) {
-  document.querySelectorAll('.provider-tab').forEach((t) => t.classList.toggle('active', t.dataset.provider === provider));
-  document.getElementById('listaModelosGemini').classList.toggle('hidden', provider !== 'gemini');
-  document.getElementById('listaModelosOpenai').classList.toggle('hidden', provider !== 'openai');
-  document.querySelectorAll('.model-option').forEach((opt) => {
-    opt.classList.toggle('selected', opt.dataset.provider === provider && opt.dataset.model === model);
-  });
-}
-
-document.querySelectorAll('.model-option').forEach((opt) => {
-  opt.addEventListener('click', async () => {
-    if (opt.classList.contains('selected')) return;
-
-    const anterior = document.querySelector('.model-option.selected');
-    document.querySelectorAll('.model-option').forEach((o) => o.classList.remove('selected'));
-    opt.classList.add('selected'); // respuesta visual inmediata
-
-    try {
-      await api.actualizarContexto(estado.negocio.id_negocio, {
-        ai_provider: opt.dataset.provider,
-        ai_model: opt.dataset.model,
+  document.getElementById('formServicio').addEventListener('submit', (e) => {
+    e.preventDefault();
+    manejarEnvio(e.target, async () => {
+      await api.agregarServicio(estado.negocio.id_negocio, {
+        nombre_servicio: document.getElementById('servNombre').value,
+        precio: Number(document.getElementById('servPrecio').value),
+        duracion_estimada: Number(document.getElementById('servDuracion').value),
+        descripcion: document.getElementById('servDescripcion').value || null,
       });
-      mostrarToast(`Motor de IA actualizado a ${opt.querySelector('.model-name').firstChild.textContent.trim()}`);
+      e.target.reset();
+      await cargarContexto();
+      mostrarToast('Servicio agregado');
+      cargarEstadisticasResumen();
+    });
+  });
+
+  /* ---------------------------------- Agenda ---------------------------------- */
+
+  const ESTADOS_CITA = ['pendiente', 'confirmada', 'completada', 'cancelada', 'expirada'];
+
+  async function cargarAgenda() {
+    if (estado.servicios.length === 0) {
+      // Necesitamos el catálogo para el <select> de "agendar manualmente".
+      try { await cargarContexto(); } catch (_) { /* se maneja abajo igual */ }
+    } else {
+      actualizarSelectServicios();
+    }
+    try {
+      const fecha = $('filtroFecha').value;
+      $('btnLimpiarFecha').classList.toggle('hidden', !fecha);
+      estado.citas = await api.listarCitas(estado.negocio.id_negocio, fecha || null);
+      renderizarAgenda();
     } catch (error) {
-      opt.classList.remove('selected');
-      if (anterior) anterior.classList.add('selected');
       mostrarToast(error.message, 'error');
     }
-  });
-});
+  }
 
-document.getElementById('formServicio').addEventListener('submit', (e) => {
-  e.preventDefault();
-  manejarEnvio(e.target, async () => {
-    await api.agregarServicio(estado.negocio.id_negocio, {
-      nombre_servicio: document.getElementById('servNombre').value,
-      precio: Number(document.getElementById('servPrecio').value),
-      duracion_estimada: Number(document.getElementById('servDuracion').value),
-      descripcion: document.getElementById('servDescripcion').value || null,
+  function renderizarAgenda() {
+    // Contadores por estado en los chips de filtro
+    $$('#filtroEstados [data-count]').forEach((b) => {
+      const k = b.dataset.count;
+      b.textContent = k ? estado.citas.filter((c) => c.estado_cita === k).length || '' : estado.citas.length || '';
     });
-    e.target.reset();
-    await cargarContexto();
-    mostrarToast('Servicio agregado');
-    cargarEstadisticasResumen();
-  });
-});
 
-/* ---------------------------------- Agenda ---------------------------------- */
+    const cont = $('tablaAgenda');
+    const citas = estado.citas
+      .filter((c) => !estado.filtroEstadoCita || c.estado_cita === estado.filtroEstadoCita)
+      .sort((a, b) => `${a.fecha_cita}${a.hora_cita}`.localeCompare(`${b.fecha_cita}${b.hora_cita}`));
 
-const ESTADOS_CITA = ['pendiente', 'confirmada', 'completada', 'cancelada', 'expirada'];
-
-async function cargarAgenda() {
-  if (estado.servicios.length === 0) {
-    // Necesitamos el catálogo para el <select> de "agendar manualmente".
-    try { await cargarContexto(); } catch (_) { /* se maneja abajo igual */ }
-  } else {
-    actualizarSelectServicios();
-  }
-  try {
-    const fecha = $('filtroFecha').value;
-    $('btnLimpiarFecha').classList.toggle('hidden', !fecha);
-    estado.citas = await api.listarCitas(estado.negocio.id_negocio, fecha || null);
-    renderizarAgenda();
-  } catch (error) {
-    mostrarToast(error.message, 'error');
-  }
-}
-
-function renderizarAgenda() {
-  // Contadores por estado en los chips de filtro
-  $$('#filtroEstados [data-count]').forEach((b) => {
-    const k = b.dataset.count;
-    b.textContent = k ? estado.citas.filter((c) => c.estado_cita === k).length || '' : estado.citas.length || '';
-  });
-
-  const cont = $('tablaAgenda');
-  const citas = estado.citas
-    .filter((c) => !estado.filtroEstadoCita || c.estado_cita === estado.filtroEstadoCita)
-    .sort((a, b) => `${a.fecha_cita}${a.hora_cita}`.localeCompare(`${b.fecha_cita}${b.hora_cita}`));
-
-  if (citas.length === 0) {
-    cont.innerHTML = `
+    if (citas.length === 0) {
+      cont.innerHTML = `
       <div class="empty">
         ${icono('cal')}
         <b>Sin citas por aquí</b>
         <span>No hay citas para mostrar.</span>
       </div>`;
-    return;
-  }
+      return;
+    }
 
-  // Agrupar por fecha
-  const grupos = citas.reduce((acc, c) => ((acc[c.fecha_cita] ||= []).push(c), acc), {});
-  const hoy = fechaLocalISO();
+    // Agrupar por fecha
+    const grupos = citas.reduce((acc, c) => ((acc[c.fecha_cita] ||= []).push(c), acc), {});
+    const hoy = fechaLocalISO();
 
-  cont.innerHTML = Object.entries(grupos).map(([fecha, lista]) => {
-    const d = new Date(`${fecha}T12:00:00`);
-    return `
+    cont.innerHTML = Object.entries(grupos).map(([fecha, lista]) => {
+      const d = new Date(`${fecha}T12:00:00`);
+      return `
       <div class="day">
         <div class="day-label ${fecha === hoy ? 'today' : ''}">
           <div class="day-wd">${fecha === hoy ? 'Hoy' : d.toLocaleDateString('es-CL', { weekday: 'short' })}</div>
@@ -666,108 +675,108 @@ function renderizarAgenda() {
             </article>`).join('')}
         </div>
       </div>`;
-  }).join('');
+    }).join('');
 
-  $$('[data-cambiar-estado]', cont).forEach((select) => {
-    select.addEventListener('change', async () => {
-      try {
-        await api.actualizarEstadoCita(estado.negocio.id_negocio, select.dataset.cambiarEstado, select.value);
-        mostrarToast('Estado actualizado');
-        cargarAgenda();
-      } catch (error) {
-        mostrarToast(error.message, 'error');
-        cargarAgenda();
-      }
+    $$('[data-cambiar-estado]', cont).forEach((select) => {
+      select.addEventListener('change', async () => {
+        try {
+          await api.actualizarEstadoCita(estado.negocio.id_negocio, select.dataset.cambiarEstado, select.value);
+          mostrarToast('Estado actualizado');
+          cargarAgenda();
+        } catch (error) {
+          mostrarToast(error.message, 'error');
+          cargarAgenda();
+        }
+      });
+    });
+
+    $$('[data-eliminar-cita]', cont).forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        if (!(await confirmar({ titulo: '¿Eliminar esta cita?' }))) return;
+        try {
+          await api.eliminarCita(estado.negocio.id_negocio, btn.dataset.eliminarCita);
+          cargarAgenda();
+          mostrarToast('Cita eliminada');
+          cargarEstadisticasResumen();
+        } catch (error) {
+          mostrarToast(error.message, 'error');
+        }
+      });
+    });
+  }
+
+  $$('#filtroEstados .chip').forEach((chip) => {
+    chip.addEventListener('click', () => {
+      estado.filtroEstadoCita = chip.dataset.estado;
+      $$('#filtroEstados .chip').forEach((c) => c.classList.toggle('active', c === chip));
+      renderizarAgenda();
     });
   });
 
-  $$('[data-eliminar-cita]', cont).forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      if (!(await confirmar({ titulo: '¿Eliminar esta cita?' }))) return;
-      try {
-        await api.eliminarCita(estado.negocio.id_negocio, btn.dataset.eliminarCita);
-        cargarAgenda();
-        mostrarToast('Cita eliminada');
-        cargarEstadisticasResumen();
-      } catch (error) {
-        mostrarToast(error.message, 'error');
-      }
+  $('filtroFecha').addEventListener('change', cargarAgenda);
+  $('btnHoy').addEventListener('click', () => { $('filtroFecha').value = fechaLocalISO(); cargarAgenda(); });
+  $('btnLimpiarFecha').addEventListener('click', () => { $('filtroFecha').value = ''; cargarAgenda(); });
+
+  /* Drawer "Agendar manualmente" */
+  function abrirDrawer() {
+    $('drawerCita').classList.add('open');
+    if (!$('citaFecha').value) $('citaFecha').value = $('filtroFecha').value || fechaLocalISO();
+    setTimeout(() => $('citaTelefono').focus(), 200);
+  }
+  function cerrarDrawer() { $('drawerCita').classList.remove('open'); }
+
+  $('btnNuevaCita').addEventListener('click', abrirDrawer);
+  $$('[data-close-drawer]').forEach((b) => b.addEventListener('click', cerrarDrawer));
+  $('drawerCita').addEventListener('click', (e) => { if (e.target.id === 'drawerCita') cerrarDrawer(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') cerrarDrawer(); });
+
+  $('formCita').addEventListener('submit', (e) => {
+    e.preventDefault();
+    manejarEnvio(e.target, async () => {
+      await api.crearCita(estado.negocio.id_negocio, {
+        telefono_cliente: $('citaTelefono').value,
+        nombre_cliente: $('citaNombre').value || null,
+        id_servicio: Number($('citaServicio').value),
+        fecha_cita: $('citaFecha').value,
+        hora_cita: $('citaHora').value,
+      });
+      e.target.reset();
+      cerrarDrawer();
+      await cargarAgenda();
+      mostrarToast('Cita agendada');
+      cargarEstadisticasResumen();
     });
   });
-}
 
-$$('#filtroEstados .chip').forEach((chip) => {
-  chip.addEventListener('click', () => {
-    estado.filtroEstadoCita = chip.dataset.estado;
-    $$('#filtroEstados .chip').forEach((c) => c.classList.toggle('active', c === chip));
-    renderizarAgenda();
-  });
-});
+  /* -------------------------------- Historial -------------------------------- */
 
-$('filtroFecha').addEventListener('change', cargarAgenda);
-$('btnHoy').addEventListener('click', () => { $('filtroFecha').value = fechaLocalISO(); cargarAgenda(); });
-$('btnLimpiarFecha').addEventListener('click', () => { $('filtroFecha').value = ''; cargarAgenda(); });
-
-/* Drawer "Agendar manualmente" */
-function abrirDrawer() {
-  $('drawerCita').classList.add('open');
-  if (!$('citaFecha').value) $('citaFecha').value = $('filtroFecha').value || fechaLocalISO();
-  setTimeout(() => $('citaTelefono').focus(), 200);
-}
-function cerrarDrawer() { $('drawerCita').classList.remove('open'); }
-
-$('btnNuevaCita').addEventListener('click', abrirDrawer);
-$$('[data-close-drawer]').forEach((b) => b.addEventListener('click', cerrarDrawer));
-$('drawerCita').addEventListener('click', (e) => { if (e.target.id === 'drawerCita') cerrarDrawer(); });
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape') cerrarDrawer(); });
-
-$('formCita').addEventListener('submit', (e) => {
-  e.preventDefault();
-  manejarEnvio(e.target, async () => {
-    await api.crearCita(estado.negocio.id_negocio, {
-      telefono_cliente: $('citaTelefono').value,
-      nombre_cliente: $('citaNombre').value || null,
-      id_servicio: Number($('citaServicio').value),
-      fecha_cita: $('citaFecha').value,
-      hora_cita: $('citaHora').value,
-    });
-    e.target.reset();
-    cerrarDrawer();
-    await cargarAgenda();
-    mostrarToast('Cita agendada');
-    cargarEstadisticasResumen();
-  });
-});
-
-/* -------------------------------- Historial -------------------------------- */
-
-async function cargarConversaciones() {
-  try {
-    estado.conversaciones = await api.listarConversaciones(estado.negocio.id_negocio);
-    renderizarConversaciones();
-  } catch (error) {
-    mostrarToast(error.message, 'error');
-  }
-}
-
-function renderizarConversaciones() {
-  const cont = $('tablaConversaciones');
-  const q = $('buscarConversacion').value.trim().toLowerCase();
-  const lista = estado.conversaciones.filter((c) =>
-    !q || (c.nombre_cliente || '').toLowerCase().includes(q) || c.telefono_cliente.includes(q));
-
-  if (estado.conversaciones.length === 0) {
-    cont.innerHTML = `<div class="conv-empty">Todavía no hay conversaciones registradas.</div>`;
-    return;
-  }
-  if (lista.length === 0) {
-    cont.innerHTML = `<div class="conv-empty">Sin resultados para "${escapeHtml(q)}".</div>`;
-    return;
+  async function cargarConversaciones() {
+    try {
+      estado.conversaciones = await api.listarConversaciones(estado.negocio.id_negocio);
+      renderizarConversaciones();
+    } catch (error) {
+      mostrarToast(error.message, 'error');
+    }
   }
 
-  cont.innerHTML = lista.map((c) => {
-    const nombre = c.nombre_cliente || c.telefono_cliente;
-    return `
+  function renderizarConversaciones() {
+    const cont = $('tablaConversaciones');
+    const q = $('buscarConversacion').value.trim().toLowerCase();
+    const lista = estado.conversaciones.filter((c) =>
+      !q || (c.nombre_cliente || '').toLowerCase().includes(q) || c.telefono_cliente.includes(q));
+
+    if (estado.conversaciones.length === 0) {
+      cont.innerHTML = `<div class="conv-empty">Todavía no hay conversaciones registradas.</div>`;
+      return;
+    }
+    if (lista.length === 0) {
+      cont.innerHTML = `<div class="conv-empty">Sin resultados para "${escapeHtml(q)}".</div>`;
+      return;
+    }
+
+    cont.innerHTML = lista.map((c) => {
+      const nombre = c.nombre_cliente || c.telefono_cliente;
+      return `
       <button class="conv ${estado.conversacionActiva === c.id_conversacion ? 'active' : ''}" data-ver-conversacion="${c.id_conversacion}">
         <span class="avatar avatar-sm">${escapeHtml(iniciales(c.nombre_cliente))}</span>
         <span class="conv-body">
@@ -781,203 +790,203 @@ function renderizarConversaciones() {
           </span>
         </span>
       </button>`;
-  }).join('');
+    }).join('');
 
-  $$('[data-ver-conversacion]', cont).forEach((fila) => {
-    fila.addEventListener('click', () => {
-      const conv = estado.conversaciones.find((c) => String(c.id_conversacion) === fila.dataset.verConversacion);
-      abrirMensajes(conv);
+    $$('[data-ver-conversacion]', cont).forEach((fila) => {
+      fila.addEventListener('click', () => {
+        const conv = estado.conversaciones.find((c) => String(c.id_conversacion) === fila.dataset.verConversacion);
+        abrirMensajes(conv);
+      });
     });
-  });
-}
-
-$('buscarConversacion').addEventListener('input', renderizarConversaciones);
-
-async function abrirMensajes(conv) {
-  try {
-    const mensajes = await api.listarMensajes(estado.negocio.id_negocio, conv.id_conversacion);
-    estado.conversacionActiva = conv.id_conversacion;
-    const nombre = conv.nombre_cliente || conv.telefono_cliente;
-    $('mensajesTitulo').textContent = `Conversación con ${nombre}`;
-    $('chatSub').textContent = `${conv.telefono_cliente} · ${conv.total_mensajes} mensajes`;
-    $('chatAvatar').textContent = iniciales(conv.nombre_cliente);
-
-    let diaAnterior = '';
-    $('chatThread').innerHTML = mensajes.length === 0
-      ? `<div class="chat-empty">${icono('chat')}<p>Esta conversación no tiene mensajes.</p></div>`
-      : mensajes.map((m, i) => {
-        const dia = new Date(m.fecha_hora).toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' });
-        const separador = dia !== diaAnterior ? `<div class="chat-day">${capitalizar(dia)}</div>` : '';
-        diaAnterior = dia;
-        return `${separador}
-          <div class="bubble ${m.emisor === 'bot' ? 'bot' : 'cliente'}" style="animation-delay:${Math.min(i, 12) * 25}ms">${escapeHtml(m.contenido)}<time>${formatoHora(m.fecha_hora)}</time></div>`;
-      }).join('');
-
-    $('inbox').classList.add('reading');
-    renderizarConversaciones();
-    const hilo = $('chatThread');
-    hilo.scrollTop = hilo.scrollHeight;
-  } catch (error) {
-    mostrarToast(error.message, 'error');
-  }
-}
-
-$('btnCerrarMensajes').addEventListener('click', () => $('inbox').classList.remove('reading'));
-
-/* -------------------------------- Helpers ---------------------------------- */
-
-function escapeHtml(texto) {
-  const div = document.createElement('div');
-  div.textContent = texto ?? '';
-  return div.innerHTML;
-}
-
-/* -------------------------------- Arranque ---------------------------------- */
-
-(async function iniciar() {
-  const params = new URLSearchParams(window.location.search);
-  const resetToken = params.get('reset_token');
-
-  // Si viene desde un enlace de recuperación, mostramos el login/reset sin auto-entrar al dashboard
-  if (resetToken) {
-    mostrarPantallaLogin();
-    initRecuperacionPassword(resetToken);
-    return;
   }
 
-  initRecuperacionPassword(null);
+  $('buscarConversacion').addEventListener('input', renderizarConversaciones);
 
-  if (Auth.getToken()) {
+  async function abrirMensajes(conv) {
     try {
-      await iniciarSesionExitosa();
+      const mensajes = await api.listarMensajes(estado.negocio.id_negocio, conv.id_conversacion);
+      estado.conversacionActiva = conv.id_conversacion;
+      const nombre = conv.nombre_cliente || conv.telefono_cliente;
+      $('mensajesTitulo').textContent = `Conversación con ${nombre}`;
+      $('chatSub').textContent = `${conv.telefono_cliente} · ${conv.total_mensajes} mensajes`;
+      $('chatAvatar').textContent = iniciales(conv.nombre_cliente);
+
+      let diaAnterior = '';
+      $('chatThread').innerHTML = mensajes.length === 0
+        ? `<div class="chat-empty">${icono('chat')}<p>Esta conversación no tiene mensajes.</p></div>`
+        : mensajes.map((m, i) => {
+          const dia = new Date(m.fecha_hora).toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' });
+          const separador = dia !== diaAnterior ? `<div class="chat-day">${capitalizar(dia)}</div>` : '';
+          diaAnterior = dia;
+          return `${separador}
+          <div class="bubble ${m.emisor === 'bot' ? 'bot' : 'cliente'}" style="animation-delay:${Math.min(i, 12) * 25}ms">${escapeHtml(m.contenido)}<time>${formatoHora(m.fecha_hora)}</time></div>`;
+        }).join('');
+
+      $('inbox').classList.add('reading');
+      renderizarConversaciones();
+      const hilo = $('chatThread');
+      hilo.scrollTop = hilo.scrollHeight;
+    } catch (error) {
+      mostrarToast(error.message, 'error');
+    }
+  }
+
+  $('btnCerrarMensajes').addEventListener('click', () => $('inbox').classList.remove('reading'));
+
+  /* -------------------------------- Helpers ---------------------------------- */
+
+  function escapeHtml(texto) {
+    const div = document.createElement('div');
+    div.textContent = texto ?? '';
+    return div.innerHTML;
+  }
+
+  /* -------------------------------- Arranque ---------------------------------- */
+
+  (async function iniciar() {
+    const params = new URLSearchParams(window.location.search);
+    const resetToken = params.get('reset_token');
+
+    // Si viene desde un enlace de recuperación, mostramos el login/reset sin auto-entrar al dashboard
+    if (resetToken) {
+      mostrarPantallaLogin();
+      initRecuperacionPassword(resetToken);
       return;
-    } catch (_) {
-      // El token guardado ya no sirve — apiFetch ya limpió el token.
     }
-  }
-  mostrarPantallaLogin();
-})();
 
-function initRecuperacionPassword(resetToken) {
-  const authTabs = document.getElementById('authTabs');
-  const authError = document.getElementById('authError');
-  const formLogin = document.getElementById('formLogin');
-  const formRegistro = document.getElementById('formRegistro');
-  const formForgot = document.getElementById('formForgot');
-  const formReset = document.getElementById('formReset');
+    initRecuperacionPassword(null);
 
-  function limpiarEstilosAviso() {
-    if (!authError) return;
-    authError.style.background = '';
-    authError.style.color = '';
-    authError.style.borderColor = '';
-  }
+    if (Auth.getToken()) {
+      try {
+        await iniciarSesionExitosa();
+        return;
+      } catch (_) {
+        // El token guardado ya no sirve — apiFetch ya limpió el token.
+      }
+    }
+    mostrarPantallaLogin();
+  })();
 
-  function mostrarAviso(texto, esExito = false) {
-    if (!authError) return mostrarToast(texto, esExito ? 'info' : 'error');
-    authError.textContent = texto;
-    authError.classList.remove('hidden');
-    if (esExito) {
-      authError.style.background = '#e6f4ea';
-      authError.style.color = '#1e7e34';
-      authError.style.borderColor = '#b7dfb9';
-    } else {
+  function initRecuperacionPassword(resetToken) {
+    const authTabs = document.getElementById('authTabs');
+    const authError = document.getElementById('authError');
+    const formLogin = document.getElementById('formLogin');
+    const formRegistro = document.getElementById('formRegistro');
+    const formForgot = document.getElementById('formForgot');
+    const formReset = document.getElementById('formReset');
+
+    function limpiarEstilosAviso() {
+      if (!authError) return;
+      authError.style.background = '';
+      authError.style.color = '';
+      authError.style.borderColor = '';
+    }
+
+    function mostrarAviso(texto, esExito = false) {
+      if (!authError) return mostrarToast(texto, esExito ? 'info' : 'error');
+      authError.textContent = texto;
+      authError.classList.remove('hidden');
+      if (esExito) {
+        authError.style.background = '#e6f4ea';
+        authError.style.color = '#1e7e34';
+        authError.style.borderColor = '#b7dfb9';
+      } else {
+        limpiarEstilosAviso();
+      }
+    }
+
+    function ocultarAviso() {
       limpiarEstilosAviso();
+      if (authError) authError.classList.add('hidden');
     }
-  }
 
-  function ocultarAviso() {
-    limpiarEstilosAviso();
-    if (authError) authError.classList.add('hidden');
-  }
+    if (resetToken && formReset) {
+      authTabs?.classList.add('hidden');
+      formLogin?.classList.add('hidden');
+      formRegistro?.classList.add('hidden');
+      formForgot?.classList.add('hidden');
+      formReset.classList.remove('hidden');
+    }
 
-  if (resetToken && formReset) {
-    authTabs?.classList.add('hidden');
-    formLogin?.classList.add('hidden');
-    formRegistro?.classList.add('hidden');
-    formForgot?.classList.add('hidden');
-    formReset.classList.remove('hidden');
-  }
+    document.querySelectorAll('.auth-tab').forEach((tab) => {
+      tab.addEventListener('click', () => {
+        ocultarAviso();
+        formForgot?.classList.add('hidden');
+        formReset?.classList.add('hidden');
+      });
+    });
 
-  document.querySelectorAll('.auth-tab').forEach((tab) => {
-    tab.addEventListener('click', () => {
+    document.getElementById('linkOlvideClave')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      ocultarAviso();
+      formLogin?.classList.add('hidden');
+      formRegistro?.classList.add('hidden');
+      formForgot?.classList.remove('hidden');
+    });
+
+    document.getElementById('linkVolverLogin')?.addEventListener('click', (e) => {
+      e.preventDefault();
       ocultarAviso();
       formForgot?.classList.add('hidden');
-      formReset?.classList.add('hidden');
+      formLogin?.classList.remove('hidden');
     });
-  });
 
-  document.getElementById('linkOlvideClave')?.addEventListener('click', (e) => {
-    e.preventDefault();
-    ocultarAviso();
-    formLogin?.classList.add('hidden');
-    formRegistro?.classList.add('hidden');
-    formForgot?.classList.remove('hidden');
-  });
+    formForgot?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      ocultarAviso();
+      const correo = document.getElementById('forgotCorreo').value.trim();
+      const btn = formForgot.querySelector("button[type='submit']");
+      if (btn) btn.disabled = true;
 
-  document.getElementById('linkVolverLogin')?.addEventListener('click', (e) => {
-    e.preventDefault();
-    ocultarAviso();
-    formForgot?.classList.add('hidden');
-    formLogin?.classList.remove('hidden');
-  });
-
-  formForgot?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    ocultarAviso();
-    const correo = document.getElementById('forgotCorreo').value.trim();
-    const btn = formForgot.querySelector("button[type='submit']");
-    if (btn) btn.disabled = true;
-
-    try {
-      const res = await fetch('/auth/forgot-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ correo }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        mostrarAviso(data.detail || 'No se pudo procesar la solicitud.');
-      } else {
-        mostrarAviso(data.detail || 'Revisa tu correo para continuar.', true);
-        formForgot.reset();
+      try {
+        const res = await fetch('/auth/forgot-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ correo }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          mostrarAviso(data.detail || 'No se pudo procesar la solicitud.');
+        } else {
+          mostrarAviso(data.detail || 'Revisa tu correo para continuar.', true);
+          formForgot.reset();
+        }
+      } catch (_) {
+        mostrarAviso('Error de conexión con el servidor.');
+      } finally {
+        if (btn) btn.disabled = false;
       }
-    } catch (_) {
-      mostrarAviso('Error de conexión con el servidor.');
-    } finally {
-      if (btn) btn.disabled = false;
-    }
-  });
+    });
 
-  formReset?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    ocultarAviso();
-    const p1 = document.getElementById('resetPass').value;
-    const p2 = document.getElementById('resetPassConfirm').value;
-    if (p1 !== p2) return mostrarAviso('Las contraseñas no coinciden.');
+    formReset?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      ocultarAviso();
+      const p1 = document.getElementById('resetPass').value;
+      const p2 = document.getElementById('resetPassConfirm').value;
+      if (p1 !== p2) return mostrarAviso('Las contraseñas no coinciden.');
 
-    const btn = formReset.querySelector("button[type='submit']");
-    if (btn) btn.disabled = true;
+      const btn = formReset.querySelector("button[type='submit']");
+      if (btn) btn.disabled = true;
 
-    try {
-      const res = await fetch('/auth/reset-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: resetToken, nueva_contrasena: p1 }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        mostrarAviso(data.detail || 'El enlace es inválido o ya expiró.');
-      } else {
-        mostrarAviso(data.detail || 'Contraseña actualizada.', true);
-        setTimeout(() => {
-          window.location.href = '/dashboard/';
-        }, 1500);
+      try {
+        const res = await fetch('/auth/reset-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: resetToken, nueva_contrasena: p1 }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          mostrarAviso(data.detail || 'El enlace es inválido o ya expiró.');
+        } else {
+          mostrarAviso(data.detail || 'Contraseña actualizada.', true);
+          setTimeout(() => {
+            window.location.href = '/dashboard/';
+          }, 1500);
+        }
+      } catch (_) {
+        mostrarAviso('Error de conexión con el servidor.');
+      } finally {
+        if (btn) btn.disabled = false;
       }
-    } catch (_) {
-      mostrarAviso('Error de conexión con el servidor.');
-    } finally {
-      if (btn) btn.disabled = false;
-    }
-  });
-}
+    });
+  }
