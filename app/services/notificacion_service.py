@@ -18,17 +18,12 @@ def _fecha_legible(fecha) -> str:
 
 
 def _obtener_credenciales_meta(negocio: Negocio) -> tuple[str, str]:
-    """Obtiene phone_number_id y access_token desde el modelo Negocio o variables de entorno."""
     phone_id = (
-        getattr(negocio, "whatsapp_phone_id", None)
-        or getattr(negocio, "phone_number_id", None)
-        or getattr(negocio, "id_telefono_whatsapp", None)
+        getattr(negocio, "whatsapp_phone_number_id", None)
         or os.getenv("WHATSAPP_PHONE_ID", "")
     )
     token = (
         getattr(negocio, "whatsapp_token", None)
-        or getattr(negocio, "access_token", None)
-        or getattr(negocio, "token_whatsapp", None)
         or os.getenv("WHATSAPP_TOKEN", "")
     )
     return str(phone_id or "").strip(), str(token or "").strip()
@@ -82,11 +77,9 @@ def notificar_cita_confirmada(
     cliente: Cliente,
     servicio: Servicio,
 ) -> bool:
-    """Notifica al cliente cuando su cita pasa a estado 'confirmada'."""
     saludo = f"Hola *{cliente.nombre_cliente}*, " if cliente.nombre_cliente else "¡Hola! "
     cuando = f"*{_fecha_legible(cita.fecha_cita)}* a las *{cita.hora_cita:%H:%M}*"
-    nombre_local = getattr(negocio, "nombre_negocio", None) or getattr(negocio, "nombre", "")
-    en_local = f" en *{nombre_local}*" if nombre_local else ""
+    en_local = f" en *{negocio.nombre_negocio}*" if negocio.nombre_negocio else ""
 
     mensaje = (
         f"✅ {saludo}se confirmó tu cita{en_local}:\n"
