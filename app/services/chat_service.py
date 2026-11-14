@@ -82,6 +82,16 @@ def procesar_mensaje(db: Session, negocio: Negocio, telefono_cliente: str, texto
     contexto = db.query(ContextoIA).filter(ContextoIA.id_negocio == negocio.id_negocio).first()
     catalogo = db.query(Servicio).filter(Servicio.id_negocio == negocio.id_negocio).all()
 
+    cita_vigente = agenda_service.obtener_cita_activa_cliente(db, negocio.id_negocio, cliente.id_cliente)
+    if cita_vigente is not None:
+        cita_obj, serv_obj = cita_vigente
+        cita_activa_txt = (
+            f"{serv_obj.nombre_servicio} el {cita_obj.fecha_cita:%Y-%m-%d} "
+            f"a las {cita_obj.hora_cita:%H:%M} (estado: {cita_obj.estado_cita})"
+        )
+    else:
+        cita_activa_txt = None
+
     prompt = ai_service.armar_prompt(
         reglas_negocio=contexto.reglas_negocio if contexto else "",
         instrucciones=contexto.instrucciones if contexto else "",
@@ -97,6 +107,7 @@ def procesar_mensaje(db: Session, negocio: Negocio, telefono_cliente: str, texto
         catalogo_habilitado=contexto.consultar_catalogo if contexto else True,
         historial=historial,
         agendar_automatico=bool(contexto and contexto.agendar_automatico),
+        cita_activa=cita_activa_txt,
         perfil_negocio={
             "nombre_negocio": negocio.nombre_negocio,
             "direccion": negocio.direccion,
