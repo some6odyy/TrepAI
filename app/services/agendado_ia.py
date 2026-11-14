@@ -29,13 +29,23 @@ from app.models.agenda import Agenda
 from app.models.negocio import Negocio
 from app.models.servicio import Servicio
 from app.services import agenda_service
-from app.services.agenda_service import HorarioOcupadoError
+from app.services.agenda_service import (
+    CitaActivaExistenteError,
+    HorarioOcupadoError,
+    SinCitaActivaError,
+)
 from app.services.horario_service import FueraDeHorarioError, validar_dentro_de_horario
 
-_RE_MARCADOR = re.compile(
-    r"\[\[\s*AGENDAR\s*\|\s*(?P<servicio>[^|\]]+?)\s*\|\s*(?P<fecha>\d{4}-\d{2}-\d{2})\s*\|\s*(?P<hora>\d{1,2}:\d{2})\s*\]\]",
+_RE_CITA = re.compile(
+    r"\[\[\s*(?P<accion>AGENDAR|REAGENDAR)\s*\|\s*(?P<servicio>[^|\]]+?)\s*\|\s*(?P<fecha>\d{4}-\d{2}-\d{2})\s*\|\s*(?P<hora>\d{1,2}:\d{2})\s*\]\]",
     re.IGNORECASE,
 )
+_RE_REAGENDAR_SIN_SERVICIO = re.compile(
+    r"\[\[\s*REAGENDAR\s*\|\s*(?P<fecha>\d{4}-\d{2}-\d{2})\s*\|\s*(?P<hora>\d{1,2}:\d{2})\s*\]\]",
+    re.IGNORECASE,
+)
+_RE_CANCELAR = re.compile(r"\[\[\s*CANCELAR\s*\]\]", re.IGNORECASE)
+
 _DIAS = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
 PASO_SUGERENCIAS_MIN = 30
 MAX_SUGERENCIAS = 3
@@ -43,42 +53,69 @@ MAX_SUGERENCIAS = 3
 
 @dataclass
 class SolicitudCita:
-    servicio: str
-    fecha: date
-    hora: time
+    accion: str  # "AGENDAR" | "REAGENDAR" | "CANCELAR"
+    servicio: str | None = None
+    fecha: date | None = None
+    hora: time | None = None
 
 
 def instrucciones_para_prompt() -> str:
     """Texto que se agrega al prompt cuando el agendado automático está activo."""
     return (
-        "AGENDADO AUTOMÁTICO ACTIVADO: tú puedes reservar horas.\n"
-        "- Para reservar necesitas: un servicio del catálogo, una fecha y una hora. "
-        "Si falta alguno, pregúntalo.\n"
+        "AGENDADO AUTOMÁTICO ACTIVADO: tú puedes reservar, reagendar y cancelar horas.\n"
         "- Interpreta fechas relativas (\"mañana\", \"el jueves\") con la fecha actual. "
         "Si el día de la semana y el número del día no coinciden, pregunta cuál es el correcto.\n"
-        "- Cuando tengas los tres datos y el cliente quiera reservar, responde ÚNICAMENTE con "
-        "esta línea, sin ningún otro texto:\n"
-        "[[AGENDAR|<nombre exacto del servicio como aparece en el catálogo>|<AAAA-MM-DD>|<HH:MM>]]\n"
-        "  Ejemplo: [[AGENDAR|Degradado|2026-11-12|16:00]]\n"
-        "- El sistema revisa la disponibilidad y le responde al cliente; nunca digas tú que la hora "
-        "quedó reservada ni inventes disponibilidad."
+        "- NUEVA RESERVA (solo si el cliente NO tiene una cita activa): cuando tengas servicio del catálogo, "
+        "fecha y hora, responde ÚNICAMENTE con esta línea sin ningún otro texto:\n"
+        "[[AGENDAR|<nombre exacto del servicio>|<AAAA-MM-DD>|<HH:MM>]]\n"
+        "  Ejemplo: [[AGENDAR|Degradado|2026-11-14|16:00]]\n"
+        "- CAMBIAR O REAGENDAR HORA (si el cliente ya tiene una cita activa y pide moverla): "
+        "NUNCA uses AGENDAR; responde ÚNICAMENTE con:\n"
+        "[[REAGENDAR|<nombre exacto del servicio>|<AAAA-MM-DD>|<HH:MM>]]\n"
+        "  Ejemplo: [[REAGENDAR|Degradado|2026-11-14|17:30]]\n"
+        "- CANCELAR HORA (si el cliente pide anular su cita activa): responde ÚNICAMENTE con:\n"
+        "[[CANCELAR]]\n"
+        "- El sistema ejecuta la acción en la base de datos y responde al cliente; nunca digas tú "
+        "que la hora quedó reservada, cambiada o cancelada ni inventes disponibilidad."
     )
 
 
 def extraer_solicitud(texto: str) -> tuple[str, SolicitudCita | None]:
-    """Separa el marcador [[AGENDAR|...]] del texto de la IA.
-    Devuelve (texto_sin_marcador, solicitud o None)."""
-    coincidencia = _RE_MARCADOR.search(texto or "")
-    if not coincidencia:
-        return texto, None
-    limpio = _RE_MARCADOR.sub("", texto).strip()
-    try:
-        fecha = date.fromisoformat(coincidencia["fecha"])
-        hh, mm = coincidencia["hora"].split(":")
-        hora = time(int(hh), int(mm))
-    except ValueError:
-        return limpio, None
-    return limpio, SolicitudCita(coincidencia["servicio"].strip(), fecha, hora)
+    """Separa los marcadores [[AGENDAR|...]], [[REAGENDAR|...]] o [[CANCELAR]] del texto de la IA."""
+    raw = texto or ""
+
+    if _RE_CANCELAR.search(raw):
+        limpio = _RE_CANCELAR.sub("", raw).strip()
+        return limpio, SolicitudCita(accion="CANCELAR")
+
+    coincidencia = _RE_CITA.search(raw)
+    if coincidencia:
+        limpio = _RE_CITA.sub("", raw).strip()
+        try:
+            fecha = date.fromisoformat(coincidencia["fecha"])
+            hh, mm = coincidencia["hora"].split(":")
+            hora = time(int(hh), int(mm))
+        except ValueError:
+            return limpio, None
+        return limpio, SolicitudCita(
+            accion=coincidencia["accion"].upper(),
+            servicio=coincidencia["servicio"].strip(),
+            fecha=fecha,
+            hora=hora,
+        )
+
+    coincidencia_sin_serv = _RE_REAGENDAR_SIN_SERVICIO.search(raw)
+    if coincidencia_sin_serv:
+        limpio = _RE_REAGENDAR_SIN_SERVICIO.sub("", raw).strip()
+        try:
+            fecha = date.fromisoformat(coincidencia_sin_serv["fecha"])
+            hh, mm = coincidencia_sin_serv["hora"].split(":")
+            hora = time(int(hh), int(mm))
+        except ValueError:
+            return limpio, None
+        return limpio, SolicitudCita(accion="REAGENDAR", fecha=fecha, hora=hora)
+
+    return raw, None
 
 
 def _normalizar(texto: str) -> str:
@@ -87,7 +124,6 @@ def _normalizar(texto: str) -> str:
 
 
 def buscar_servicio(nombre: str, servicios: list[Servicio]) -> Servicio | None:
-    """Coincidencia exacta (sin tildes ni mayúsculas) y, si no hay, parcial."""
     buscado = _normalizar(nombre)
     for s in servicios:
         if _normalizar(s.nombre_servicio) == buscado:
@@ -103,8 +139,15 @@ def _fecha_legible(fecha: date) -> str:
     return f"{_DIAS[fecha.weekday()]} {fecha:%d-%m}"
 
 
-def _sugerir_horarios(db: Session, negocio: Negocio, servicio: Servicio, fecha: date, desde: time, ahora: datetime) -> list[time]:
-    """Próximos horarios libres del mismo día, a partir de la hora pedida."""
+def _sugerir_horarios(
+    db: Session,
+    negocio: Negocio,
+    servicio: Servicio,
+    fecha: date,
+    desde: time,
+    ahora: datetime,
+    excluir_id_agenda: int | None = None,
+) -> list[time]:
     duracion = agenda_service.duracion_minutos(servicio)
     sugerencias: list[time] = []
     actual = datetime.combine(fecha, desde)
@@ -113,7 +156,14 @@ def _sugerir_horarios(db: Session, negocio: Negocio, servicio: Servicio, fecha: 
         if actual > ahora:
             try:
                 validar_dentro_de_horario(negocio.horario, fecha, actual.time(), duracion)
-                agenda_service.validar_horario_libre(db, negocio.id_negocio, fecha, actual.time(), duracion)
+                agenda_service.validar_horario_libre(
+                    db,
+                    negocio.id_negocio,
+                    fecha,
+                    actual.time(),
+                    duracion,
+                    excluir_id_agenda=excluir_id_agenda,
+                )
                 sugerencias.append(actual.time())
             except (FueraDeHorarioError, HorarioOcupadoError):
                 pass
@@ -128,35 +178,80 @@ def procesar_solicitud(
     solicitud: SolicitudCita,
     ahora_local: datetime,
 ) -> str:
-    """Intenta crear la cita pendiente y devuelve el mensaje para el cliente."""
-    servicios = db.query(Servicio).filter(Servicio.id_negocio == negocio.id_negocio).all()
-    servicio = buscar_servicio(solicitud.servicio, servicios)
-    if servicio is None:
-        nombres = ", ".join(s.nombre_servicio for s in servicios) or "ninguno cargado"
-        return f"No encontré el servicio \"{solicitud.servicio}\". ¿Cuál de estos quieres? {nombres}"
+    """Ejecuta AGENDAR, REAGENDAR o CANCELAR y devuelve el mensaje final al cliente."""
+    if solicitud.accion == "CANCELAR":
+        try:
+            cita_cancelada = agenda_service.cancelar_cita_activa(db, negocio.id_negocio, id_cliente)
+        except SinCitaActivaError:
+            return "No tienes ninguna cita activa para cancelar. Si quieres agendar una hora nueva, dime qué servicio, día y hora prefieres."
 
+        servicio = db.query(Servicio).filter(Servicio.id_servicio == cita_cancelada.id_servicio).first()
+        nombre_serv = servicio.nombre_servicio if servicio else "tu servicio"
+        cuando = f"*{_fecha_legible(cita_cancelada.fecha_cita)}* a las *{cita_cancelada.hora_cita:%H:%M}*"
+        return f"Listo, cancelé tu cita de *{nombre_serv}* del {cuando}. Cuando quieras volver a agendar, escríbeme."
+
+    servicios = db.query(Servicio).filter(Servicio.id_negocio == negocio.id_negocio).all()
     ahora = ahora_local.replace(tzinfo=None)
+    assert solicitud.fecha is not None and solicitud.hora is not None
     inicio = datetime.combine(solicitud.fecha, solicitud.hora)
     cuando = f"*{_fecha_legible(solicitud.fecha)}* a las *{solicitud.hora:%H:%M}*"
 
     if inicio <= ahora:
         return f"Esa hora ({_fecha_legible(solicitud.fecha)} a las {solicitud.hora:%H:%M}) ya pasó. ¿Para qué otro día u hora la quieres?"
 
-    # Evita duplicar si el cliente repite la misma reserva
-    agenda_service.liberar_pendientes_vencidas(db, negocio.id_negocio)
-    ya_existe = (
-        db.query(Agenda)
-        .filter(
-            Agenda.id_cliente == id_cliente,
-            Agenda.id_servicio == servicio.id_servicio,
-            Agenda.fecha_cita == solicitud.fecha,
-            Agenda.hora_cita == solicitud.hora,
-            Agenda.estado_cita.in_(("pendiente", "confirmada")),
+    if solicitud.accion == "REAGENDAR":
+        existente = agenda_service.obtener_cita_activa_cliente(db, negocio.id_negocio, id_cliente)
+        if existente is None:
+            return "No encontré una cita activa para cambiar. Dime qué servicio, día y hora quieres reservar."
+
+        cita_actual, servicio_actual = existente
+        servicio_nuevo = (
+            buscar_servicio(solicitud.servicio, servicios)
+            if solicitud.servicio
+            else servicio_actual
+        ) or servicio_actual
+
+        try:
+            agenda_service.reagendar_cita_validada(
+                db,
+                id_negocio=negocio.id_negocio,
+                id_cliente=id_cliente,
+                nueva_fecha=solicitud.fecha,
+                nueva_hora=solicitud.hora,
+                nuevo_servicio=servicio_nuevo,
+                horario_negocio=negocio.horario,
+            )
+        except FueraDeHorarioError:
+            horario = f" Nuestro horario es: {negocio.horario}." if negocio.horario else ""
+            return f"Esa hora queda fuera de nuestro horario de atención.{horario} ¿A qué otra hora la cambiamos?"
+        except HorarioOcupadoError:
+            libres = _sugerir_horarios(
+                db,
+                negocio,
+                servicio_nuevo,
+                solicitud.fecha,
+                solicitud.hora,
+                ahora,
+                excluir_id_agenda=cita_actual.id_agenda,
+            )
+            if libres:
+                opciones = ", ".join(f"{h:%H:%M}" for h in libres)
+                return (
+                    f"Uy, las {solicitud.hora:%H:%M} del {_fecha_legible(solicitud.fecha)} ya están tomadas. "
+                    f"Ese día tengo libre: {opciones}. ¿Te sirve alguna para el cambio?"
+                )
+            return f"El {_fecha_legible(solicitud.fecha)} ya no me quedan horas libres después de las {solicitud.hora:%H:%M}. ¿Te acomoda otro día?"
+
+        return (
+            f"¡Listo! 🙌 Cambié tu hora de *{servicio_nuevo.nombre_servicio}* para el {cuando}.\n"
+            f"La cita anterior quedó liberada y esta nueva hora queda *pendiente* hasta que el equipo la confirme."
         )
-        .first()
-    )
-    if ya_existe:
-        return f"Ya tienes reservado *{servicio.nombre_servicio}* el {cuando} (estado: {ya_existe.estado_cita}). 👍"
+
+    # Acción: AGENDAR (nueva cita)
+    servicio = buscar_servicio(solicitud.servicio or "", servicios)
+    if servicio is None:
+        nombres = ", ".join(s.nombre_servicio for s in servicios) or "ninguno cargado"
+        return f"No encontré el servicio \"{solicitud.servicio}\". ¿Cuál de estos quieres? {nombres}"
 
     try:
         agenda_service.crear_cita_validada(
@@ -167,6 +262,13 @@ def procesar_solicitud(
             fecha=solicitud.fecha,
             hora=solicitud.hora,
             horario_negocio=negocio.horario,
+            permitir_duplicado_cliente=False,
+        )
+    except CitaActivaExistenteError as err:
+        actual_txt = f"*{_fecha_legible(err.cita.fecha_cita)}* a las *{err.cita.hora_cita:%H:%M}*"
+        return (
+            f"Ya tienes una cita activa de *{err.servicio.nombre_servicio}* el {actual_txt} ({err.cita.estado_cita}). "
+            f"Si quieres cambiarla para el {cuando}, confírmamelo y la muevo sin duplicarla."
         )
     except FueraDeHorarioError:
         horario = f" Nuestro horario es: {negocio.horario}." if negocio.horario else ""
