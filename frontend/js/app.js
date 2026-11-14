@@ -308,23 +308,34 @@ async function refrescarEstadoWhatsapp() {
   document.getElementById('btnDesvincularWhatsapp').hidden = !info.conectado;
 }
 
+let pasoVerificacionSms = false;
+
+function reiniciarFormularioWhatsapp() {
+  pasoVerificacionSms = false;
+  const pasoCodigo = document.getElementById('pasoCodigoSms');
+  const btnSubmit = document.querySelector('#formWhatsapp button[type="submit"]');
+  if (pasoCodigo) pasoCodigo.classList.add('hidden');
+  if (btnSubmit) btnSubmit.textContent = 'Enviar código SMS';
+  const inputCodigo = document.getElementById('waCodigoSms');
+  if (inputCodigo) inputCodigo.value = '';
+}
+
 document.getElementById('btnDesvincularWhatsapp').addEventListener('click', async (e) => {
-  const confirmado = confirm(
-    '¿Desvincular el número de WhatsApp?\n\n'
-    + 'TrepAI dejará de responder mensajes en ese número y el bot quedará apagado. '
-    + 'Puedes volver a conectarlo cuando quieras con el Phone Number ID y el token.'
-  );
+  const confirmado = await confirmar({
+    titulo: '¿Desvincular WhatsApp?',
+    texto: 'TrepAI dejará de responder mensajes en este número y el bot quedará apagado.',
+    boton: 'Desvincular',
+  });
   if (!confirmado) return;
 
   const boton = e.currentTarget;
   boton.disabled = true;
   try {
     await api.desvincularWhatsapp(estado.negocio.id_negocio);
-    // El backend también apaga el bot: reflejarlo en el interruptor del Resumen.
     estado.negocio.estado_bot = false;
     actualizarInterruptorBot(false);
-    document.getElementById('waPhoneId').value = '';
-    document.getElementById('waToken').value = '';
+    document.getElementById('formWhatsapp').reset();
+    reiniciarFormularioWhatsapp();
     await refrescarEstadoWhatsapp();
     mostrarToast('WhatsApp desvinculado');
   } catch (error) {
@@ -337,14 +348,41 @@ document.getElementById('btnDesvincularWhatsapp').addEventListener('click', asyn
 document.getElementById('formWhatsapp').addEventListener('submit', (e) => {
   e.preventDefault();
   manejarEnvio(e.target, async () => {
-    await api.conectarWhatsapp(estado.negocio.id_negocio, {
-      phone_number_id: document.getElementById('waPhoneId').value,
-      access_token: document.getElementById('waToken').value,
-    });
-    document.getElementById('waToken').value = '';
+    const idNegocio = estado.negocio.id_negocio;
+
+    if (!pasoVerificacionSms) {
+      // Paso 1: registrar número en Meta y pedir SMS de 6 dígitos
+      const telefono = document.getElementById('waTelefono').value.trim();
+      const nombreVisible = document.getElementById('waNombreVisible').value.trim() || estado.negocio.nombre_negocio;
+
+      await api.solicitarCodigoWhatsapp(idNegocio, {
+        telefono,
+        nombre_visible: nombreVisible,
+      });
+
+      pasoVerificacionSms = true;
+      document.getElementById('pasoCodigoSms').classList.remove('hidden');
+      e.target.querySelector('button[type="submit"]').textContent = 'Verificar y conectar';
+      document.getElementById('waCodigoSms').focus();
+      mostrarToast('Te enviamos un SMS con un código de 6 dígitos');
+      return;
+    }
+
+    // Paso 2: confirmar código SMS y activar el bot
+    const codigo = document.getElementById('waCodigoSms').value.trim();
+    await api.verificarCodigoWhatsapp(idNegocio, { codigo });
+
+    estado.negocio.estado_bot = true;
+    actualizarInterruptorBot(true);
+    reiniciarFormularioWhatsapp();
     await refrescarEstadoWhatsapp();
-    mostrarToast('WhatsApp conectado');
+    mostrarToast('¡WhatsApp conectado y bot encendido!');
   });
+});
+
+document.getElementById('btnReenviarCodigo')?.addEventListener('click', () => {
+  reiniciarFormularioWhatsapp();
+  document.getElementById('formWhatsapp').requestSubmit();
 });
 
 /* --------------------------- Contexto IA --------------------------------- */

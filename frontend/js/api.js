@@ -65,6 +65,10 @@ const api = {
   cambiarEstadoBot: (id, activo) => apiFetch(`/negocio/${id}/estado-bot?activo=${activo}`, { method: 'PATCH' }),
   estadoWhatsapp: (id) => apiFetch(`/negocio/${id}/whatsapp`),
   conectarWhatsapp: (id, datos) => apiFetch(`/negocio/${id}/whatsapp`, { method: 'PUT', body: datos }),
+  solicitarCodigoWhatsapp: (idNegocio, datos) =>
+    apiFetch(`/negocio/${idNegocio}/whatsapp/solicitar-codigo`, { method: 'POST', body: JSON.stringify(datos) }),
+  verificarCodigoWhatsapp: (idNegocio, datos) =>
+    apiFetch(`/negocio/${idNegocio}/whatsapp/verificar-codigo`, { method: 'POST', body: JSON.stringify(datos) }),
   desvincularWhatsapp: (id) => apiFetch(`/negocio/${id}/whatsapp`, { method: 'DELETE' }),
 
   obtenerContexto: (id) => apiFetch(`/negocio/${id}/contexto`),
