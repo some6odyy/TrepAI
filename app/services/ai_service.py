@@ -52,6 +52,7 @@ def armar_prompt(
     historial: list | None = None,
     perfil_negocio: dict | None = None,
     agendar_automatico: bool = False,
+    cita_activa: str | None = None,
 ) -> str:
     """Combina el contexto configurado por el administrador (RF-03) con el
     mensaje entrante del cliente final.
@@ -120,8 +121,10 @@ def armar_prompt(
         f"Reglas del negocio:\n{reglas_negocio or '(sin reglas adicionales)'}\n\n"
         f"Instrucciones del administrador:\n{instrucciones or '(sin instrucciones adicionales)'}\n\n"
         f"Catálogo de servicios:\n{catalogo_texto}\n\n"
+        f"Cita activa actual del cliente: {cita_activa or 'ninguna'}\n\n"
         f"Conversación hasta ahora:\n{historial_texto}\n\n"
         f"Nuevo mensaje del cliente:\n{mensaje_cliente}"
+        
     )
 
 
