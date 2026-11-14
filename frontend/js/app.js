@@ -302,11 +302,40 @@ document.getElementById('formPerfil').addEventListener('submit', (e) => {
 async function refrescarEstadoWhatsapp() {
   const info = await api.estadoWhatsapp(estado.negocio.id_negocio);
   const badge = document.getElementById('whatsappBadge');
-  badge.textContent = info.conectado ? `Conectado (${info.phone_number_id})` : 'Sin conectar';
-  badge.className = `badge ${info.conectado ? 'badge-success' : 'badge-muted'}`;
-  // El botón de desvincular solo tiene sentido si hay un número conectado.
-  document.getElementById('btnDesvincularWhatsapp').hidden = !info.conectado;
+  if (badge) {
+    badge.textContent = info.conectado ? `Conectado (${info.phone_number_id})` : 'Sin conectar';
+    badge.className = `badge ${info.conectado ? 'badge-success' : 'badge-muted'}`;
+  }
+  const btnDesvincular = document.getElementById('btnDesvincularWhatsapp');
+  if (btnDesvincular) {
+    btnDesvincular.hidden = !info.conectado;
+  }
 }
+
+document.getElementById('btnDesvincularWhatsapp')?.addEventListener('click', async (e) => {
+  const confirmado = await confirmar({
+    titulo: '¿Desvincular WhatsApp?',
+    texto: 'TrepAI dejará de responder mensajes en este número y el bot quedará apagado.',
+    boton: 'Desvincular',
+  });
+  if (!confirmado) return;
+
+  const boton = e.currentTarget;
+  boton.disabled = true;
+  try {
+    await api.desvincularWhatsapp(estado.negocio.id_negocio);
+    estado.negocio.estado_bot = false;
+    actualizarInterruptorBot(false);
+    document.getElementById('formWhatsapp')?.reset();
+    reiniciarFormularioWhatsapp();
+    await refrescarEstadoWhatsapp();
+    mostrarToast('WhatsApp desvinculado');
+  } catch (error) {
+    mostrarToast(error.message, 'error');
+  } finally {
+    boton.disabled = false;
+  }
+});
 
 let pasoVerificacionSms = false;
 

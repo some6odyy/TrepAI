@@ -312,10 +312,14 @@
           <div class="card">
             <div class="card-header">
               <h2>Conexión con WhatsApp</h2>
-              <span class="badge badge-muted" id="whatsappBadge">Sin conectar</span>
+              <div style="display:flex;gap:8px;align-items:center">
+                <span class="badge badge-muted" id="whatsappBadge">Sin conectar</span>
+                <button type="button" id="btnDesvincularWhatsapp" class="btn btn-sm btn-danger"
+                  hidden>Desvincular</button>
+              </div>
             </div>
-            <p class="text-muted">Obtén estos datos en developers.facebook.com → WhatsApp → Configuración de la API
-              (modo sandbox mientras la app no esté verificada por Meta).</p>
+            <p class="text-muted">Vincula el número de tu negocio mediante verificación por SMS. Asegúrate de que el
+              número no tenga una cuenta activa en la app de WhatsApp o WhatsApp Business.</p>
             <form id="formWhatsapp">
               <div class="form-row">
                 <div class="form-group">
