@@ -16,8 +16,9 @@ from app.models.negocio import Negocio
 from app.models.contexto_ia import ContextoIA
 from app.models.servicio import Servicio
 from app.models.conversacion import Conversacion, Mensaje
-from app.services import ai_service, agendado_ia
+from app.services import ai_service, agendado_ia, agenda_service
 from app.services.cliente_service import obtener_o_crear_cliente
+
 
 # Cuántos mensajes previos ve la IA y de qué ventana de tiempo
 MENSAJES_MEMORIA = 10
