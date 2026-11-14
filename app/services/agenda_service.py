@@ -114,6 +114,7 @@ def validar_horario_libre(
     hora: time,
     duracion_min: int,
     excluir_id_agenda: int | None = None,
+    excluir_ids_agenda: set[int] | None = None,
 ) -> None:
     liberar_pendientes_vencidas(db, id_negocio)
 
@@ -128,8 +129,11 @@ def validar_horario_libre(
             Agenda.estado_cita.in_(ESTADOS_QUE_BLOQUEAN),
         )
     )
+    ids_excluir = set(excluir_ids_agenda or ())
     if excluir_id_agenda is not None:
-        consulta = consulta.filter(Agenda.id_agenda != excluir_id_agenda)
+        ids_excluir.add(excluir_id_agenda)
+    if ids_excluir:
+        consulta = consulta.filter(~Agenda.id_agenda.in_(ids_excluir))
 
     for cita, servicio in consulta.all():
         ini, fin = _intervalo(cita.fecha_cita, cita.hora_cita, duracion_minutos(servicio))
@@ -180,15 +184,27 @@ def reagendar_cita_validada(
     nuevo_servicio: Servicio | None = None,
     horario_negocio: str | None = None,
 ) -> Agenda:
-    """Mueve la cita activa del cliente a un nuevo día/hora validando
-    disponibilidad sin chocar con su propia cita anterior."""
-    existente = obtener_cita_activa_cliente(db, id_negocio, id_cliente)
-    if existente is None:
+    """Mueve la cita activa más reciente del cliente a un nuevo día/hora
+    y cancela cualquier duplicado activo previo."""
+    liberar_pendientes_vencidas(db, id_negocio)
+    activas = (
+        db.query(Agenda, Servicio)
+        .join(Servicio, Agenda.id_servicio == Servicio.id_servicio)
+        .filter(
+            Servicio.id_negocio == id_negocio,
+            Agenda.id_cliente == id_cliente,
+            Agenda.estado_cita.in_(("pendiente", "confirmada")),
+        )
+        .order_by(Agenda.fecha_cita.desc(), Agenda.hora_cita.desc())
+        .all()
+    )
+    if not activas:
         raise SinCitaActivaError("No tienes una cita activa para reagendar.")
 
-    cita, servicio_actual = existente
+    cita, servicio_actual = activas[0]
     servicio_final = nuevo_servicio or servicio_actual
     duracion = duracion_minutos(servicio_final)
+    ids_cliente = {c.id_agenda for c, _ in activas}
 
     validar_dentro_de_horario(horario_negocio, nueva_fecha, nueva_hora, duracion)
     validar_horario_libre(
@@ -197,8 +213,11 @@ def reagendar_cita_validada(
         nueva_fecha,
         nueva_hora,
         duracion,
-        excluir_id_agenda=cita.id_agenda,
+        excluir_ids_agenda=ids_cliente,
     )
+
+    for extra, _ in activas[1:]:
+        extra.estado_cita = "cancelada"
 
     cita.id_servicio = servicio_final.id_servicio
     cita.fecha_cita = nueva_fecha
