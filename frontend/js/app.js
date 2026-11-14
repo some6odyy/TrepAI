@@ -19,11 +19,15 @@ const estado = {
 
 function mostrarToast(mensaje, tipo = 'info') {
   const stack = document.getElementById('toastStack');
+  if (!stack) return;
+  while (stack.children.length >= 2) {
+    stack.firstElementChild.remove();
+  }
   const toast = document.createElement('div');
   toast.className = `toast ${tipo === 'error' ? 'error' : ''}`;
   toast.textContent = mensaje;
   stack.appendChild(toast);
-  setTimeout(() => toast.remove(), 4500);
+  setTimeout(() => toast.remove(), 3500);
 }
 
 function formatoCLP(valor) {
@@ -530,15 +534,30 @@ async function refrescarEstadoWhatsapp() {
 
   function conectarToggleSistema(id, campo, etiqueta) {
     const el = document.getElementById(id);
-    el.addEventListener('click', async () => {
-      const nuevoValor = !el.classList.contains('on');
-      el.classList.toggle('on', nuevoValor); // respuesta visual inmediata
+    if (!el) return;
+
+    el.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (el.dataset.guardando === '1') return;
+
+      const estadoAnterior = el.classList.contains('on');
+      const nuevoValor = !estadoAnterior;
+
+      el.dataset.guardando = '1';
+      el.style.pointerEvents = 'none';
+      el.style.opacity = '0.6';
+      el.classList.toggle('on', nuevoValor);
+
       try {
         await api.actualizarContexto(estado.negocio.id_negocio, { [campo]: nuevoValor });
         mostrarToast(`${etiqueta} ${nuevoValor ? 'activado' : 'desactivado'}`);
       } catch (error) {
-        el.classList.toggle('on', !nuevoValor); // revertir si falló
+        el.classList.toggle('on', estadoAnterior);
         mostrarToast(error.message, 'error');
+      } finally {
+        delete el.dataset.guardando;
+        el.style.pointerEvents = '';
+        el.style.opacity = '';
       }
     });
   }
