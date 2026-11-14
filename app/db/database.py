@@ -5,19 +5,15 @@ adelante sin reescribir los modelos ni las consultas.
 """
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
-
+from sqlalchemy.pool import NullPool
 from app.core.config import DATABASE_URL
 
-connect_args = {"check_same_thread": False} if "sqlite" in DATABASE_URL else {}
+engine_kwargs = {"pool_pre_ping": True}
+if not DATABASE_URL.startswith("sqlite"):
+    engine_kwargs["poolclass"] = NullPool
 
-engine = create_engine(
-    DATABASE_URL,
-    connect_args=connect_args,
-    pool_pre_ping=True,
-    pool_recycle=300,
-)
+engine = create_engine(DATABASE_URL, **engine_kwargs)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
 Base = declarative_base()
 
 
