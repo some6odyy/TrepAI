@@ -60,10 +60,9 @@ async def recibir_mensaje(request: Request, db: Session = Depends(get_db)):
     respuesta = chat_service.procesar_mensaje(db, negocio, telefono_cliente, texto_mensaje)
 
     # 8) Responder al cliente por WhatsApp (RF-09)
-    token_whatsapp = descifrar_texto(negocio.whatsapp_token)
+    raw_token = (negocio.whatsapp_token or "").strip()
+    token_whatsapp = raw_token if raw_token.startswith("EAA") else descifrar_texto(raw_token)
     if not token_whatsapp:
-        # El negocio tiene el bot activo pero nunca conectó (o le falló el
-        # cifrado de) su token de WhatsApp — no hay a quién mandarle nada.
         return {"status": "procesado", "enviado_a_whatsapp": False, "motivo": "whatsapp_no_conectado"}
 
     enviado = whatsapp_service.enviar_mensaje(
