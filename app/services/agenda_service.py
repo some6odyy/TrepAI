@@ -40,6 +40,22 @@ class HorarioOcupadoError(Exception):
         )
 
 
+class CitaActivaExistenteError(Exception):
+    """El cliente ya tiene una cita pendiente o confirmada en el negocio."""
+
+    def __init__(self, cita: Agenda, servicio: Servicio):
+        self.cita = cita
+        self.servicio = servicio
+        super().__init__(
+            f"Ya tienes una cita activa de {servicio.nombre_servicio} el "
+            f"{cita.fecha_cita:%d-%m} a las {cita.hora_cita:%H:%M}."
+        )
+
+
+class SinCitaActivaError(Exception):
+    """El cliente intentó reagendar o cancelar sin tener una cita activa."""
+
+
 def ahora_utc() -> datetime:
     """Hora actual en UTC, sin tzinfo (así se guarda en la BD)."""
     return datetime.now(timezone.utc).replace(tzinfo=None)
@@ -55,11 +71,6 @@ def _intervalo(fecha: date, hora: time, minutos: int) -> tuple[datetime, datetim
 
 
 def liberar_pendientes_vencidas(db: Session, id_negocio: int) -> int:
-    """Marca como 'expirada' toda cita 'pendiente' de este negocio creada hace
-    más de HORAS_VENCIMIENTO_PENDIENTE horas. Devuelve cuántas liberó.
-
-    Se ejecuta de forma perezosa (al listar, crear o cambiar estados) porque
-    en Vercel no hay un proceso corriendo en segundo plano."""
     limite = ahora_utc() - timedelta(hours=HORAS_VENCIMIENTO_PENDIENTE)
     ids_servicios = db.query(Servicio.id_servicio).filter(Servicio.id_negocio == id_negocio)
     vencidas = (
@@ -78,6 +89,24 @@ def liberar_pendientes_vencidas(db: Session, id_negocio: int) -> int:
     return len(vencidas)
 
 
+def obtener_cita_activa_cliente(
+    db: Session, id_negocio: int, id_cliente: int
+) -> tuple[Agenda, Servicio] | None:
+    """Devuelve la cita 'pendiente' o 'confirmada' más próxima del cliente."""
+    liberar_pendientes_vencidas(db, id_negocio)
+    return (
+        db.query(Agenda, Servicio)
+        .join(Servicio, Agenda.id_servicio == Servicio.id_servicio)
+        .filter(
+            Servicio.id_negocio == id_negocio,
+            Agenda.id_cliente == id_cliente,
+            Agenda.estado_cita.in_(("pendiente", "confirmada")),
+        )
+        .order_by(Agenda.fecha_cita.asc(), Agenda.hora_cita.asc())
+        .first()
+    )
+
+
 def validar_horario_libre(
     db: Session,
     id_negocio: int,
@@ -86,8 +115,6 @@ def validar_horario_libre(
     duracion_min: int,
     excluir_id_agenda: int | None = None,
 ) -> None:
-    """Lanza HorarioOcupadoError si [hora, hora+duración) choca con otra cita
-    activa del mismo negocio. Libera antes las pendientes vencidas."""
     liberar_pendientes_vencidas(db, id_negocio)
 
     nuevo_ini, nuevo_fin = _intervalo(fecha, hora, duracion_min)
@@ -106,8 +133,6 @@ def validar_horario_libre(
 
     for cita, servicio in consulta.all():
         ini, fin = _intervalo(cita.fecha_cita, cita.hora_cita, duracion_minutos(servicio))
-        # Intervalos semiabiertos: una cita que termina a las 10:30 NO choca
-        # con otra que empieza a las 10:30.
         if nuevo_ini < fin and ini < nuevo_fin:
             raise HorarioOcupadoError(ini.time(), fin.time())
 
@@ -120,11 +145,15 @@ def crear_cita_validada(
     fecha: date,
     hora: time,
     horario_negocio: str | None = None,
+    permitir_duplicado_cliente: bool = True,
 ) -> Agenda:
-    """Crea una cita 'pendiente' si cae dentro del horario de atención y el
-    espacio está libre. Punto de entrada común para el Dashboard y para el
-    futuro agendado automático por IA. Puede lanzar FueraDeHorarioError o
-    HorarioOcupadoError."""
+    """Crea una cita 'pendiente'. Desde el flujo IA pasa permitir_duplicado_cliente=False
+    para evitar que se dupliquen reservas cuando el cliente pide un cambio."""
+    if not permitir_duplicado_cliente:
+        existente = obtener_cita_activa_cliente(db, id_negocio, id_cliente)
+        if existente is not None:
+            raise CitaActivaExistenteError(*existente)
+
     validar_dentro_de_horario(horario_negocio, fecha, hora, duracion_minutos(servicio))
     validar_horario_libre(db, id_negocio, fecha, hora, duracion_minutos(servicio))
 
@@ -137,6 +166,60 @@ def crear_cita_validada(
         fecha_creacion=ahora_utc(),
     )
     db.add(cita)
+    db.commit()
+    db.refresh(cita)
+    return cita
+
+
+def reagendar_cita_validada(
+    db: Session,
+    id_negocio: int,
+    id_cliente: int,
+    nueva_fecha: date,
+    nueva_hora: time,
+    nuevo_servicio: Servicio | None = None,
+    horario_negocio: str | None = None,
+) -> Agenda:
+    """Mueve la cita activa del cliente a un nuevo día/hora validando
+    disponibilidad sin chocar con su propia cita anterior."""
+    existente = obtener_cita_activa_cliente(db, id_negocio, id_cliente)
+    if existente is None:
+        raise SinCitaActivaError("No tienes una cita activa para reagendar.")
+
+    cita, servicio_actual = existente
+    servicio_final = nuevo_servicio or servicio_actual
+    duracion = duracion_minutos(servicio_final)
+
+    validar_dentro_de_horario(horario_negocio, nueva_fecha, nueva_hora, duracion)
+    validar_horario_libre(
+        db,
+        id_negocio,
+        nueva_fecha,
+        nueva_hora,
+        duracion,
+        excluir_id_agenda=cita.id_agenda,
+    )
+
+    cita.id_servicio = servicio_final.id_servicio
+    cita.fecha_cita = nueva_fecha
+    cita.hora_cita = nueva_hora
+    cita.estado_cita = "pendiente"
+    cita.fecha_creacion = ahora_utc()
+    db.commit()
+    db.refresh(cita)
+    return cita
+
+
+def cancelar_cita_activa(
+    db: Session, id_negocio: int, id_cliente: int
+) -> Agenda:
+    """Cancela la cita activa del cliente y libera el bloque horario."""
+    existente = obtener_cita_activa_cliente(db, id_negocio, id_cliente)
+    if existente is None:
+        raise SinCitaActivaError("No tienes una cita activa para cancelar.")
+
+    cita, _ = existente
+    cita.estado_cita = "cancelada"
     db.commit()
     db.refresh(cita)
     return cita
