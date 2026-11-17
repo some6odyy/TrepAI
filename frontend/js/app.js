@@ -365,9 +365,12 @@ async function cargarNumerosWhatsapp() {
     }
     tbody.innerHTML = numeros.map((n) => {
       const estadoTxt = ESTADOS_NUMERO_WA[n.estado] || n.estado || (n.verificacion === 'VERIFIED' ? 'Verificado' : 'Sin verificar');
-      const etiqueta = n.vinculado_a === 'este'
-        ? ' <span class="badge badge-success">Este negocio</span>'
-        : n.vinculado_a === 'otro' ? ' <span class="badge badge-warning">Otro negocio</span>' : '';
+      const etiquetas = {
+        este: '<span class="badge badge-success">Este negocio</span>',
+        este_pendiente: '<span class="badge badge-muted">Este negocio · sin verificar</span>',
+        otro: '<span class="badge badge-warning">Otro negocio</span>',
+      };
+      const etiqueta = etiquetas[n.vinculado_a] ? ` ${etiquetas[n.vinculado_a]}` : '';
       let boton = '';
       if (n.se_puede_eliminar) {
         boton = `<a class="btn btn-sm btn-danger" href="${escapeHtml(urlMeta)}" target="_blank" rel="noopener"

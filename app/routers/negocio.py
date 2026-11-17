@@ -1,3 +1,4 @@
+
 """RF-02 | Gestión de perfil del negocio. RF-04 | Control on/off del bot."""
 import os
 import re
@@ -5,7 +6,7 @@ import requests
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-
+ 
 from app.core.deps import obtener_administrador_actual, obtener_negocio_propio
 from app.core.security import cifrar_texto
 from app.db.database import get_db
@@ -13,21 +14,21 @@ from app.models.administrador import Administrador
 from app.models.negocio import Negocio
 from app.schemas.negocio import EstadoBotResponse, NegocioCreate, NegocioResponse, NegocioUpdate
 from app.schemas.whatsapp import WhatsAppConexionUpdate, WhatsAppEstadoResponse
-
+ 
 router = APIRouter(prefix="/negocio", tags=["Negocio"])
-
+ 
 GRAPH_URL = "https://graph.facebook.com/v26.0"
-
-
+ 
+ 
 class SolicitarCodigoWhatsApp(BaseModel):
     telefono: str
     nombre_visible: str
-
-
+ 
+ 
 class VerificarCodigoWhatsApp(BaseModel):
     codigo: str
-
-
+ 
+ 
 def _separar_telefono_chile(telefono: str) -> tuple[str, str]:
     digitos = re.sub(r"\D", "", telefono)
     if digitos.startswith("56") and len(digitos) >= 11:
@@ -38,8 +39,8 @@ def _separar_telefono_chile(telefono: str) -> tuple[str, str]:
         status_code=status.HTTP_400_BAD_REQUEST,
         detail="Ingresa un número válido con código de país (ej. +56912345678)",
     )
-
-
+ 
+ 
 def _credenciales_maestras_meta() -> tuple[str, str]:
     waba_id = (os.getenv("META_WABA_ID") or "").strip()
     master_token = (os.getenv("META_MASTER_TOKEN") or "").strip()
@@ -49,7 +50,7 @@ def _credenciales_maestras_meta() -> tuple[str, str]:
             detail="Faltan META_WABA_ID o META_MASTER_TOKEN en la configuración del servidor",
         )
     return waba_id, master_token
-
+ 
 def _error_meta(resp, por_defecto: str) -> str:
     """Extrae el motivo real de un error de la Graph API de Meta."""
     try:
@@ -68,7 +69,7 @@ def _error_meta(resp, por_defecto: str) -> str:
     if codigo:
         detalle += f" (Meta {codigo}{'/' + str(sub) if sub else ''})"
     return detalle
-
+ 
 def _buscar_numero_en_waba(waba_id: str, headers: dict, cc: str, numero_local: str) -> str | None:
     """Devuelve el phone_number_id si el número ya está dado de alta en el WABA."""
     resp = requests.get(
@@ -84,7 +85,7 @@ def _buscar_numero_en_waba(waba_id: str, headers: dict, cc: str, numero_local: s
         if re.sub(r"\D", "", item.get("display_phone_number", "")) == objetivo:
             return item.get("id")
     return None
-
+ 
 @router.post("/{id_negocio}/whatsapp/solicitar-codigo")
 def solicitar_codigo_whatsapp(
     datos: SolicitarCodigoWhatsApp,
@@ -94,7 +95,7 @@ def solicitar_codigo_whatsapp(
     waba_id, master_token = _credenciales_maestras_meta()
     headers = {"Authorization": f"Bearer {master_token}"}
     cc, numero_local = _separar_telefono_chile(datos.telefono)
-
+ 
         # 1) Reutilizar el número si ya existe en el WABA; si no, darlo de alta
     phone_number_id = _buscar_numero_en_waba(waba_id, headers, cc, numero_local)
     if not phone_number_id:
@@ -116,7 +117,7 @@ def solicitar_codigo_whatsapp(
         phone_number_id = resp_num.json().get("id")
         if not phone_number_id:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Meta no devolvió el ID del número")
-
+ 
     ya_usado = (
         negocio.whatsapp_phone_number_id != phone_number_id
         and db.query(Negocio).filter(Negocio.whatsapp_phone_number_id == phone_number_id).first()
@@ -126,7 +127,7 @@ def solicitar_codigo_whatsapp(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Ese número ya está conectado a otro negocio en TrepAI",
         )
-
+ 
     # 2) Pedir a Meta que envíe el SMS con el código de 6 dígitos
     resp_sms = requests.post(
         f"{GRAPH_URL}/{phone_number_id}/request_code",
@@ -139,13 +140,13 @@ def solicitar_codigo_whatsapp(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=_error_meta(resp_sms, "No se pudo enviar el SMS de verificación"),
         )
-
+ 
     negocio.whatsapp_phone_number_id = phone_number_id
     db.commit()
-
+ 
     return {"ok": True, "phone_number_id": phone_number_id}
-
-
+ 
+ 
 @router.post("/{id_negocio}/whatsapp/verificar-codigo", response_model=WhatsAppEstadoResponse)
 def verificar_codigo_whatsapp(
     datos: VerificarCodigoWhatsApp,
@@ -157,11 +158,11 @@ def verificar_codigo_whatsapp(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Primero solicita el código SMS con tu número",
         )
-
+ 
     _, master_token = _credenciales_maestras_meta()
     headers = {"Authorization": f"Bearer {master_token}"}
     phone_id = negocio.whatsapp_phone_number_id
-
+ 
     # 1) Validar código de 6 dígitos
     resp_verify = requests.post(
         f"{GRAPH_URL}/{phone_id}/verify_code",
@@ -171,7 +172,7 @@ def verificar_codigo_whatsapp(
     )
     if not resp_verify.ok:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Código incorrecto o expirado")
-
+ 
     # 2) Registrar el número en Cloud API para habilitar mensajería
     resp_reg = requests.post(
         f"{GRAPH_URL}/{phone_id}/register",
@@ -184,21 +185,21 @@ def verificar_codigo_whatsapp(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Código verificado, pero falló la activación en Cloud API",
         )
-
+ 
     negocio.whatsapp_token = cifrar_texto(master_token)
     negocio.estado_bot = True
     db.commit()
     db.refresh(negocio)
-
+ 
     return WhatsAppEstadoResponse(conectado=True, phone_number_id=negocio.whatsapp_phone_number_id)
-
-
+ 
+ 
 def _enmascarar(numero: str) -> str:
     """+56 9 9495 1451 -> +56 9 •••• 1451 (para números de otros negocios)."""
     digitos = re.sub(r"\D", "", numero)
     return f"+{digitos[:3]} •••• {digitos[-4:]}" if len(digitos) > 7 else "••••"
-
-
+ 
+ 
 def _numeros_del_waba(waba_id: str, headers: dict) -> list[dict]:
     resp = requests.get(
         f"{GRAPH_URL}/{waba_id}/phone_numbers",
@@ -215,8 +216,8 @@ def _numeros_del_waba(waba_id: str, headers: dict) -> list[dict]:
             detail=_error_meta(resp, "No se pudieron leer los números de la cuenta de Meta"),
         )
     return resp.json().get("data", [])
-
-
+ 
+ 
 @router.get("/{id_negocio}/whatsapp/numeros")
 def listar_numeros_whatsapp(
     db: Session = Depends(get_db),
@@ -226,17 +227,29 @@ def listar_numeros_whatsapp(
     waba_id, master_token = _credenciales_maestras_meta()
     headers = {"Authorization": f"Bearer {master_token}"}
     numeros = _numeros_del_waba(waba_id, headers)
-
+ 
     ids = [n.get("id") for n in numeros]
+ 
+    # Si este negocio quedó con un número a medio verificar que ya no existe en Meta, se limpia
+    if negocio.whatsapp_phone_number_id and not negocio.whatsapp_token and negocio.whatsapp_phone_number_id not in ids:
+        negocio.whatsapp_phone_number_id = None
+        db.commit()
+ 
+    # phone_number_id -> (id_negocio, conectado). "Conectado" = verificó el SMS y tiene token
     dueños = {
-        n.whatsapp_phone_number_id: n.id_negocio
+        n.whatsapp_phone_number_id: (n.id_negocio, bool(n.whatsapp_token))
         for n in db.query(Negocio).filter(Negocio.whatsapp_phone_number_id.in_(ids)).all()
     }
-
+ 
     resultado = []
     for n in numeros:
-        id_dueño = dueños.get(n.get("id"))
-        de_otro = id_dueño is not None and id_dueño != negocio.id_negocio
+        id_dueño, conectado = dueños.get(n.get("id"), (None, False))
+        es_este = id_dueño == negocio.id_negocio
+        de_otro = id_dueño is not None and not es_este
+        if es_este:
+            vinculado_a = "este" if conectado else "este_pendiente"
+        else:
+            vinculado_a = "otro" if de_otro else None
         resultado.append({
             "phone_number_id": n.get("id"),
             "numero": _enmascarar(n.get("display_phone_number", "")) if de_otro else n.get("display_phone_number"),
@@ -244,8 +257,9 @@ def listar_numeros_whatsapp(
             "estado": n.get("status"),
             "verificacion": n.get("code_verification_status"),
             "calidad": n.get("quality_rating"),
-            "vinculado_a": "este" if id_dueño == negocio.id_negocio else ("otro" if de_otro else None),
-            "se_puede_eliminar": id_dueño is None,
+            "vinculado_a": vinculado_a,
+            # Se puede borrar si está suelto o si es de este negocio pero nunca terminó la verificación
+            "se_puede_eliminar": id_dueño is None or (es_este and not conectado),
         })
     # Meta no permite borrar números por API: se hace en el Administrador de WhatsApp
     return {
@@ -253,8 +267,8 @@ def listar_numeros_whatsapp(
         "numeros": resultado,
         "url_administrador": f"https://business.facebook.com/wa/manage/phone-numbers/?waba_id={waba_id}",
     }
-
-
+ 
+ 
 @router.post("", response_model=NegocioResponse, status_code=status.HTTP_201_CREATED)
 def crear_negocio(
     datos: NegocioCreate,
@@ -274,8 +288,8 @@ def crear_negocio(
     db.commit()
     db.refresh(nuevo_negocio)
     return nuevo_negocio
-
-
+ 
+ 
 @router.get("", response_model=list[NegocioResponse])
 def listar_mis_negocios(
     db: Session = Depends(get_db),
@@ -287,13 +301,13 @@ def listar_mis_negocios(
         .filter(Negocio.id_administrador == administrador_actual.id_administrador)
         .all()
     )
-
-
+ 
+ 
 @router.get("/{id_negocio}", response_model=NegocioResponse)
 def obtener_negocio(negocio: Negocio = Depends(obtener_negocio_propio)):
     return negocio
-
-
+ 
+ 
 @router.put("/{id_negocio}/perfil", response_model=NegocioResponse)
 def actualizar_perfil(
     datos: NegocioUpdate,
@@ -303,12 +317,12 @@ def actualizar_perfil(
     """Actualiza solo los campos enviados en el body."""
     for campo, valor in datos.model_dump(exclude_unset=True).items():
         setattr(negocio, campo, valor)
-
+ 
     db.commit()
     db.refresh(negocio)
     return negocio
-
-
+ 
+ 
 @router.patch("/{id_negocio}/estado-bot", response_model=EstadoBotResponse)
 def cambiar_estado_bot(
     activo: bool,
@@ -320,16 +334,16 @@ def cambiar_estado_bot(
     db.commit()
     db.refresh(negocio)
     return EstadoBotResponse(id_negocio=negocio.id_negocio, estado_bot=negocio.estado_bot)
-
-
+ 
+ 
 @router.get("/{id_negocio}/whatsapp", response_model=WhatsAppEstadoResponse)
 def obtener_estado_whatsapp(negocio: Negocio = Depends(obtener_negocio_propio)):
     return WhatsAppEstadoResponse(
         conectado=bool(negocio.whatsapp_phone_number_id and negocio.whatsapp_token),
         phone_number_id=negocio.whatsapp_phone_number_id,
     )
-
-
+ 
+ 
 @router.put("/{id_negocio}/whatsapp", response_model=WhatsAppEstadoResponse)
 def conectar_whatsapp(
     datos: WhatsAppConexionUpdate,
@@ -346,15 +360,15 @@ def conectar_whatsapp(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Ese phone_number_id ya está conectado a otro negocio",
         )
-
+ 
     negocio.whatsapp_phone_number_id = datos.phone_number_id
     negocio.whatsapp_token = cifrar_texto(datos.access_token)
     db.commit()
     db.refresh(negocio)
-
+ 
     return WhatsAppEstadoResponse(conectado=True, phone_number_id=negocio.whatsapp_phone_number_id)
-
-
+ 
+ 
 @router.delete("/{id_negocio}/whatsapp", response_model=WhatsAppEstadoResponse)
 def desvincular_whatsapp(
     db: Session = Depends(get_db),
@@ -366,5 +380,5 @@ def desvincular_whatsapp(
     negocio.estado_bot = False
     db.commit()
     db.refresh(negocio)
-
+ 
     return WhatsAppEstadoResponse(conectado=False, phone_number_id=None)

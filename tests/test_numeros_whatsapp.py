@@ -35,11 +35,12 @@ def cuenta(correo):
     return h, idn
 
 
-def vincular(idn, phone_id):
+def vincular(idn, phone_id, conectado=True):
     db = SessionLocal()
     n = db.get(Negocio, idn)
     n.whatsapp_phone_number_id = phone_id
-    n.estado_bot = True
+    n.whatsapp_token = "cifrado" if conectado else None
+    n.estado_bot = conectado
     db.commit()
     db.close()
 
@@ -65,3 +66,18 @@ def test_listar_y_eliminar():
     with patch("app.routers.negocio.requests.get", return_value=resp(data=NUMEROS_META)):
         propio = c.get(f"/negocio/{idn}/whatsapp/numeros", headers=h).json()["numeros"][0]
     assert propio["vinculado_a"] is None and propio["se_puede_eliminar"]
+
+def test_numero_a_medio_verificar():
+    """Se pidió el SMS pero nunca se verificó: no está conectado y se debe poder eliminar."""
+    h, idn = cuenta("c@test.cl")
+    vincular(idn, "333", conectado=False)
+    meta = {"data": [{"id": "333", "display_phone_number": "+56 9 9455 1451", "status": "PENDING"}]}
+
+    with patch("app.routers.negocio.requests.get", return_value=resp(data=meta)):
+        n = c.get(f"/negocio/{idn}/whatsapp/numeros", headers=h).json()["numeros"][0]
+    assert n["vinculado_a"] == "este_pendiente" and n["se_puede_eliminar"]
+
+    # Ya se borró en Meta: el negocio deja de apuntar a ese número
+    with patch("app.routers.negocio.requests.get", return_value=resp(data={"data": []})):
+        assert c.get(f"/negocio/{idn}/whatsapp/numeros", headers=h).json()["numeros"] == []
+    assert c.get(f"/negocio/{idn}/whatsapp", headers=h).json()["phone_number_id"] is None
