@@ -1,4 +1,4 @@
-"""Pruebas de listar/eliminar números del WABA, con la Graph API de Meta simulada.
+"""Pruebas del listado de números del WABA, con la Graph API de Meta simulada.
     python -m pytest tests/test_numeros_whatsapp.py
 """
 import os, tempfile, uuid
@@ -53,35 +53,15 @@ def test_listar_y_eliminar():
     with patch("app.routers.negocio.requests.get", return_value=resp(data=NUMEROS_META)):
         r = c.get(f"/negocio/{idn}/whatsapp/numeros", headers=h).json()
     assert r["limite"] == 2 and len(r["numeros"]) == 2
+    assert r["url_administrador"].endswith("waba_id=WABA1")
     propio, ajeno = r["numeros"]
-    assert propio["vinculado_a"] == "este" and propio["se_puede_eliminar"]
+    # el propio está conectado: hay que desvincularlo antes de borrarlo en Meta
+    assert propio["vinculado_a"] == "este" and not propio["se_puede_eliminar"]
     assert ajeno["vinculado_a"] == "otro" and not ajeno["se_puede_eliminar"]
     assert "5678" in ajeno["numero"] and "1234" not in ajeno["numero"] and ajeno["nombre"] is None
 
-    # No se puede borrar el número de otro negocio
-    with patch("app.routers.negocio.requests.get", return_value=resp(data=NUMEROS_META)), \
-         patch("app.routers.negocio.requests.delete") as borrar:
-        r = c.delete(f"/negocio/{idn}/whatsapp/numeros/222", headers=h)
-    assert r.status_code == 409 and not borrar.called
-
-    # Número que no está en el WABA
+    # Tras desvincular, el número queda suelto y se puede eliminar en Meta
+    c.delete(f"/negocio/{idn}/whatsapp", headers=h)
     with patch("app.routers.negocio.requests.get", return_value=resp(data=NUMEROS_META)):
-        assert c.delete(f"/negocio/{idn}/whatsapp/numeros/999", headers=h).status_code == 404
-
-    # Meta rechaza el borrado: se muestra su motivo
-    with patch("app.routers.negocio.requests.get", return_value=resp(data=NUMEROS_META)), \
-         patch("app.routers.negocio.requests.post", return_value=resp()), \
-         patch("app.routers.negocio.requests.delete",
-               return_value=resp(ok=False, status=400, data={"error": {"message": "No se puede", "code": 100}})):
-        r = c.delete(f"/negocio/{idn}/whatsapp/numeros/111", headers=h)
-    assert r.status_code == 400 and "No se puede" in r.json()["detail"]
-
-    # Borrado correcto del propio: también lo desvincula
-    with patch("app.routers.negocio.requests.get", return_value=resp(data=NUMEROS_META)), \
-         patch("app.routers.negocio.requests.post", return_value=resp()) as post, \
-         patch("app.routers.negocio.requests.delete", return_value=resp(data={"success": True})) as borrar:
-        r = c.delete(f"/negocio/{idn}/whatsapp/numeros/111", headers=h)
-    assert r.status_code == 200 and r.json()["desvinculado_de_este_negocio"]
-    assert post.call_args[0][0].endswith("/111/deregister")
-    assert borrar.call_args[0][0].endswith("/111")
-    assert c.get(f"/negocio/{idn}/whatsapp", headers=h).json()["conectado"] is False
+        propio = c.get(f"/negocio/{idn}/whatsapp/numeros", headers=h).json()["numeros"][0]
+    assert propio["vinculado_a"] is None and propio["se_puede_eliminar"]

@@ -354,7 +354,7 @@ async function cargarNumerosWhatsapp() {
   if (!tbody || !estado.negocio) return;
 
   try {
-    const { limite, numeros } = await api.listarNumerosWhatsapp(estado.negocio.id_negocio);
+    const { limite, numeros, url_administrador: urlMeta } = await api.listarNumerosWhatsapp(estado.negocio.id_negocio);
     if (cupo) {
       cupo.textContent = `${numeros.length}/${limite}`;
       cupo.className = `badge ${numeros.length >= limite ? 'badge-danger' : 'badge-muted'}`;
@@ -368,10 +368,13 @@ async function cargarNumerosWhatsapp() {
       const etiqueta = n.vinculado_a === 'este'
         ? ' <span class="badge badge-success">Este negocio</span>'
         : n.vinculado_a === 'otro' ? ' <span class="badge badge-warning">Otro negocio</span>' : '';
-      const boton = n.se_puede_eliminar
-        ? `<button type="button" class="btn btn-sm btn-danger" data-eliminar-wa="${escapeHtml(n.phone_number_id)}"
-             data-numero="${escapeHtml(n.numero || '')}">Eliminar</button>`
-        : '';
+      let boton = '';
+      if (n.se_puede_eliminar) {
+        boton = `<a class="btn btn-sm btn-danger" href="${escapeHtml(urlMeta)}" target="_blank" rel="noopener"
+             title="Meta solo permite borrar números desde el Administrador de WhatsApp">Eliminar en Meta ↗</a>`;
+      } else if (n.vinculado_a === 'este') {
+        boton = '<span class="text-muted" style="font-size:12px">Desvincula primero para eliminarlo</span>';
+      }
       return `<tr>
         <td>${escapeHtml(n.numero || '—')}${etiqueta}</td>
         <td>${escapeHtml(n.nombre || '—')}</td>
@@ -386,33 +389,6 @@ async function cargarNumerosWhatsapp() {
 }
 
 document.getElementById('btnRefrescarNumerosWa')?.addEventListener('click', cargarNumerosWhatsapp);
-
-document.getElementById('tablaNumerosWa')?.addEventListener('click', async (e) => {
-  const boton = e.target.closest('[data-eliminar-wa]');
-  if (!boton) return;
-
-  const confirmado = await confirmar({
-    titulo: `¿Eliminar ${boton.dataset.numero}?`,
-    texto: 'Se quitará el número de la cuenta de Meta de TrepAI para liberar cupo. Si está conectado a este negocio, el bot dejará de responder.',
-    boton: 'Eliminar',
-  });
-  if (!confirmado) return;
-
-  boton.disabled = true;
-  try {
-    const r = await api.eliminarNumeroWhatsapp(estado.negocio.id_negocio, boton.dataset.eliminarWa);
-    if (r.desvinculado_de_este_negocio) {
-      estado.negocio.estado_bot = false;
-      actualizarInterruptorBot(false);
-      reiniciarFormularioWhatsapp();
-    }
-    await refrescarEstadoWhatsapp();
-    mostrarToast('Número eliminado de la cuenta de Meta');
-  } catch (error) {
-    mostrarToast(error.message, 'error');
-    boton.disabled = false;
-  }
-});
 
 document.getElementById('btnDesvincularWhatsapp')?.addEventListener('click', async (e) => {
   const confirmado = await confirmar({

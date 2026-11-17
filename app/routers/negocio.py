@@ -245,49 +245,14 @@ def listar_numeros_whatsapp(
             "verificacion": n.get("code_verification_status"),
             "calidad": n.get("quality_rating"),
             "vinculado_a": "este" if id_dueño == negocio.id_negocio else ("otro" if de_otro else None),
-            "se_puede_eliminar": not de_otro,
+            "se_puede_eliminar": id_dueño is None,
         })
-    return {"limite": 2, "numeros": resultado}
-
-
-@router.delete("/{id_negocio}/whatsapp/numeros/{phone_number_id}")
-def eliminar_numero_whatsapp(
-    phone_number_id: str,
-    db: Session = Depends(get_db),
-    negocio: Negocio = Depends(obtener_negocio_propio),
-):
-    """Saca un número del WABA de Meta para liberar cupo."""
-    waba_id, master_token = _credenciales_maestras_meta()
-    headers = {"Authorization": f"Bearer {master_token}"}
-
-    if phone_number_id not in {n.get("id") for n in _numeros_del_waba(waba_id, headers)}:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ese número no está en la cuenta de Meta")
-
-    dueño = db.query(Negocio).filter(Negocio.whatsapp_phone_number_id == phone_number_id).first()
-    if dueño and dueño.id_negocio != negocio.id_negocio:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Ese número está conectado a otro negocio de TrepAI; no puedes eliminarlo desde aquí",
-        )
-
-    # Si estaba registrado en Cloud API, primero se da de baja (si no lo estaba, Meta da error y se ignora)
-    requests.post(f"{GRAPH_URL}/{phone_number_id}/deregister", headers=headers, timeout=10)
-
-    resp = requests.delete(f"{GRAPH_URL}/{phone_number_id}", headers=headers, timeout=10)
-    if not resp.ok:
-        detalle = _error_meta(resp, "Meta no permitió eliminar el número")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"{detalle}. Si persiste, elimínalo desde el Administrador de WhatsApp en business.facebook.com",
-        )
-
-    if dueño:
-        dueño.whatsapp_phone_number_id = None
-        dueño.whatsapp_token = None
-        dueño.estado_bot = False
-        db.commit()
-
-    return {"ok": True, "desvinculado_de_este_negocio": dueño is not None}
+    # Meta no permite borrar números por API: se hace en el Administrador de WhatsApp
+    return {
+        "limite": 2,
+        "numeros": resultado,
+        "url_administrador": f"https://business.facebook.com/wa/manage/phone-numbers/?waba_id={waba_id}",
+    }
 
 
 @router.post("", response_model=NegocioResponse, status_code=status.HTTP_201_CREATED)
