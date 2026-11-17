@@ -266,6 +266,17 @@ def procesar_solicitud(
         )
     except CitaActivaExistenteError as err:
         actual_txt = f"*{_fecha_legible(err.cita.fecha_cita)}* a las *{err.cita.hora_cita:%H:%M}*"
+        mismo_horario = (
+            err.cita.fecha_cita == solicitud.fecha
+            and err.cita.hora_cita.replace(second=0, microsecond=0) == solicitud.hora.replace(second=0, microsecond=0)
+            and err.servicio.id_servicio == servicio.id_servicio
+        )
+        if mismo_horario:
+            # Pidió exactamente la cita que ya tiene: no hay nada que mover.
+            return (
+                f"Ya tienes reservado *{err.servicio.nombre_servicio}* el {actual_txt} "
+                f"({err.cita.estado_cita}). No hace falta agendar de nuevo 🙌"
+            )
         return (
             f"Ya tienes una cita activa de *{err.servicio.nombre_servicio}* el {actual_txt} ({err.cita.estado_cita}). "
             f"Si quieres cambiarla para el {cuando}, confírmamelo y la muevo sin duplicarla."
