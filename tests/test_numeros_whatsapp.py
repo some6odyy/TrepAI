@@ -81,3 +81,32 @@ def test_numero_a_medio_verificar():
     with patch("app.routers.negocio.requests.get", return_value=resp(data={"data": []})):
         assert c.get(f"/negocio/{idn}/whatsapp/numeros", headers=h).json()["numeros"] == []
     assert c.get(f"/negocio/{idn}/whatsapp", headers=h).json()["phone_number_id"] is None
+
+def test_verificar_codigo():
+    import requests as rq
+    h, idn = cuenta("d@test.cl")
+    vincular(idn, "444", conectado=False)
+    no_verificado = resp(data={"code_verification_status": "NOT_VERIFIED"})
+    url = f"/negocio/{idn}/whatsapp/verificar-codigo"
+
+    # Meta no responde: 502 con mensaje legible (antes era un 500)
+    with patch("app.routers.negocio.requests.get", return_value=no_verificado), \
+        patch("app.routers.negocio.requests.post", side_effect=rq.Timeout("lento")):
+        r = c.post(url, headers=h, json={"codigo": "123456"})
+    assert r.status_code == 502 and "Meta no respondió" in r.json()["detail"]
+
+    # Código incorrecto: se muestra el motivo que da Meta
+    with patch("app.routers.negocio.requests.get", return_value=no_verificado), \
+        patch("app.routers.negocio.requests.post",
+            return_value=resp(ok=False, status=400, data={"error": {"message": "Code mismatch", "code": 136025}})):
+        r = c.post(url, headers=h, json={"codigo": "000000"})
+    assert r.status_code == 400 and "Code mismatch" in r.json()["detail"]
+
+    # El intento anterior se cortó pero Meta ya lo verificó: se salta verify_code y se activa
+    with patch("app.routers.negocio.requests.get",
+            return_value=resp(data={"code_verification_status": "VERIFIED"})), \
+        patch("app.routers.negocio.requests.post", return_value=resp(data={"success": True})) as post:
+        r = c.post(url, headers=h, json={"codigo": "123456"})
+    assert r.status_code == 200 and r.json()["conectado"] is True
+    urls = [llamada[0][0] for llamada in post.call_args_list]
+    assert len(urls) == 1 and urls[0].endswith("/444/register")

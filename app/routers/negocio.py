@@ -1,4 +1,3 @@
-
 """RF-02 | Gestión de perfil del negocio. RF-04 | Control on/off del bot."""
 import os
 import re
@@ -51,6 +50,19 @@ def _credenciales_maestras_meta() -> tuple[str, str]:
         )
     return waba_id, master_token
  
+def _meta(metodo: str, url: str, **kwargs):
+    """Llama a la Graph API; si Meta no responde, devuelve un error legible en vez de un 500."""
+    kwargs.setdefault("timeout", 20)
+    try:
+        return getattr(requests, metodo)(url, **kwargs)
+    except requests.RequestException as exc:
+        print("ERROR META (red):", metodo.upper(), url, repr(exc))
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Meta no respondió a tiempo. Espera unos segundos y vuelve a intentarlo.",
+        )
+
+
 def _error_meta(resp, por_defecto: str) -> str:
     """Extrae el motivo real de un error de la Graph API de Meta."""
     try:
@@ -72,11 +84,10 @@ def _error_meta(resp, por_defecto: str) -> str:
  
 def _buscar_numero_en_waba(waba_id: str, headers: dict, cc: str, numero_local: str) -> str | None:
     """Devuelve el phone_number_id si el número ya está dado de alta en el WABA."""
-    resp = requests.get(
+    resp = _meta("get",
         f"{GRAPH_URL}/{waba_id}/phone_numbers",
         headers=headers,
         params={"fields": "id,display_phone_number", "limit": 100},
-        timeout=10,
     )
     if not resp.ok:
         return None
@@ -99,7 +110,7 @@ def solicitar_codigo_whatsapp(
         # 1) Reutilizar el número si ya existe en el WABA; si no, darlo de alta
     phone_number_id = _buscar_numero_en_waba(waba_id, headers, cc, numero_local)
     if not phone_number_id:
-        resp_num = requests.post(
+        resp_num = _meta("post",
             f"{GRAPH_URL}/{waba_id}/phone_numbers",
             headers=headers,
             json={
@@ -107,7 +118,6 @@ def solicitar_codigo_whatsapp(
                 "phone_number": numero_local,
                 "verified_name": datos.nombre_visible.strip(),
             },
-            timeout=10,
         )
         if not resp_num.ok:
             raise HTTPException(
@@ -129,11 +139,10 @@ def solicitar_codigo_whatsapp(
         )
  
     # 2) Pedir a Meta que envíe el SMS con el código de 6 dígitos
-    resp_sms = requests.post(
+    resp_sms = _meta("post",
         f"{GRAPH_URL}/{phone_number_id}/request_code",
         headers=headers,
         json={"code_method": "SMS", "language": "es"},
-        timeout=10,
     )
     if not resp_sms.ok:
         raise HTTPException(
@@ -163,32 +172,49 @@ def verificar_codigo_whatsapp(
     headers = {"Authorization": f"Bearer {master_token}"}
     phone_id = negocio.whatsapp_phone_number_id
  
-    # 1) Validar código de 6 dígitos
-    resp_verify = requests.post(
-        f"{GRAPH_URL}/{phone_id}/verify_code",
-        headers=headers,
-        json={"code": re.sub(r"\D", "", datos.codigo)},
-        timeout=10,
-    )
-    if not resp_verify.ok:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Código incorrecto o expirado")
- 
+    # 1) Validar código de 6 dígitos. Si un intento anterior se cortó por timeout pero Meta
+    #    alcanzó a verificarlo, el número ya figura como VERIFIED y se pasa directo a activarlo.
+    resp_estado = _meta("get", f"{GRAPH_URL}/{phone_id}", headers=headers,
+                        params={"fields": "code_verification_status"})
+    ya_verificado = resp_estado.ok and resp_estado.json().get("code_verification_status") == "VERIFIED"
+
+    if not ya_verificado:
+        resp_verify = _meta("post",
+            f"{GRAPH_URL}/{phone_id}/verify_code",
+            headers=headers,
+            json={"code": re.sub(r"\D", "", datos.codigo)},
+            timeout=30,
+        )
+        if not resp_verify.ok:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=_error_meta(resp_verify, "Código incorrecto o expirado"),
+            )
+
     # 2) Registrar el número en Cloud API para habilitar mensajería
-    resp_reg = requests.post(
+    resp_reg = _meta("post",
         f"{GRAPH_URL}/{phone_id}/register",
         headers=headers,
         json={"messaging_product": "whatsapp", "pin": "123456"},
-        timeout=10,
+        timeout=30,
     )
     if not resp_reg.ok:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Código verificado, pero falló la activación en Cloud API",
+            detail=_error_meta(resp_reg, "Código verificado, pero falló la activación en Cloud API"),
         )
  
-    negocio.whatsapp_token = cifrar_texto(master_token)
-    negocio.estado_bot = True
-    db.commit()
+    try:
+        negocio.whatsapp_token = cifrar_texto(master_token)
+        negocio.estado_bot = True
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print("ERROR al guardar la conexión de WhatsApp:", repr(exc))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"El número quedó verificado en Meta, pero no se pudo guardar en TrepAI ({type(exc).__name__})",
+        )
     db.refresh(negocio)
  
     return WhatsAppEstadoResponse(conectado=True, phone_number_id=negocio.whatsapp_phone_number_id)
@@ -201,14 +227,13 @@ def _enmascarar(numero: str) -> str:
  
  
 def _numeros_del_waba(waba_id: str, headers: dict) -> list[dict]:
-    resp = requests.get(
+    resp = _meta("get",
         f"{GRAPH_URL}/{waba_id}/phone_numbers",
         headers=headers,
         params={
             "fields": "id,display_phone_number,verified_name,status,code_verification_status,quality_rating",
             "limit": 100,
         },
-        timeout=10,
     )
     if not resp.ok:
         raise HTTPException(

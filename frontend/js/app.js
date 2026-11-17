@@ -88,7 +88,8 @@ async function manejarEnvio(formulario, accion) {
     mostrarToast(error.message, 'error');
   } finally {
     boton.disabled = false;
-    boton.textContent = textoOriginal;
+    // Si la acción cambió el texto del botón (ej. "Verificar y conectar"), se respeta
+    if (boton.textContent === 'Guardando…') boton.textContent = textoOriginal;
   }
 }
 
