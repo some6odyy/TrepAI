@@ -333,7 +333,86 @@ async function refrescarEstadoWhatsapp() {
       }
     }
   }
+  cargarNumerosWhatsapp();
 }
+
+/* Números dados de alta en el WABA de Meta (cupo de 2 sin verificar) */
+
+const ESTADOS_NUMERO_WA = {
+  CONNECTED: 'Conectado',
+  PENDING: 'Pendiente',
+  UNVERIFIED: 'Sin verificar',
+  DISCONNECTED: 'Desconectado',
+  FLAGGED: 'Marcado',
+  RESTRICTED: 'Restringido',
+  BANNED: 'Bloqueado',
+};
+
+async function cargarNumerosWhatsapp() {
+  const tbody = document.getElementById('tablaNumerosWa');
+  const cupo = document.getElementById('numerosWaCupo');
+  if (!tbody || !estado.negocio) return;
+
+  try {
+    const { limite, numeros } = await api.listarNumerosWhatsapp(estado.negocio.id_negocio);
+    if (cupo) {
+      cupo.textContent = `${numeros.length}/${limite}`;
+      cupo.className = `badge ${numeros.length >= limite ? 'badge-danger' : 'badge-muted'}`;
+    }
+    if (!numeros.length) {
+      tbody.innerHTML = '<tr><td colspan="4" class="table-empty">No hay números en la cuenta de Meta</td></tr>';
+      return;
+    }
+    tbody.innerHTML = numeros.map((n) => {
+      const estadoTxt = ESTADOS_NUMERO_WA[n.estado] || n.estado || (n.verificacion === 'VERIFIED' ? 'Verificado' : 'Sin verificar');
+      const etiqueta = n.vinculado_a === 'este'
+        ? ' <span class="badge badge-success">Este negocio</span>'
+        : n.vinculado_a === 'otro' ? ' <span class="badge badge-warning">Otro negocio</span>' : '';
+      const boton = n.se_puede_eliminar
+        ? `<button type="button" class="btn btn-sm btn-danger" data-eliminar-wa="${escapeHtml(n.phone_number_id)}"
+             data-numero="${escapeHtml(n.numero || '')}">Eliminar</button>`
+        : '';
+      return `<tr>
+        <td>${escapeHtml(n.numero || '—')}${etiqueta}</td>
+        <td>${escapeHtml(n.nombre || '—')}</td>
+        <td>${escapeHtml(estadoTxt)}</td>
+        <td style="text-align:right">${boton}</td>
+      </tr>`;
+    }).join('');
+  } catch (error) {
+    if (cupo) cupo.textContent = '';
+    tbody.innerHTML = `<tr><td colspan="4" class="table-empty">${escapeHtml(error.message)}</td></tr>`;
+  }
+}
+
+document.getElementById('btnRefrescarNumerosWa')?.addEventListener('click', cargarNumerosWhatsapp);
+
+document.getElementById('tablaNumerosWa')?.addEventListener('click', async (e) => {
+  const boton = e.target.closest('[data-eliminar-wa]');
+  if (!boton) return;
+
+  const confirmado = await confirmar({
+    titulo: `¿Eliminar ${boton.dataset.numero}?`,
+    texto: 'Se quitará el número de la cuenta de Meta de TrepAI para liberar cupo. Si está conectado a este negocio, el bot dejará de responder.',
+    boton: 'Eliminar',
+  });
+  if (!confirmado) return;
+
+  boton.disabled = true;
+  try {
+    const r = await api.eliminarNumeroWhatsapp(estado.negocio.id_negocio, boton.dataset.eliminarWa);
+    if (r.desvinculado_de_este_negocio) {
+      estado.negocio.estado_bot = false;
+      actualizarInterruptorBot(false);
+      reiniciarFormularioWhatsapp();
+    }
+    await refrescarEstadoWhatsapp();
+    mostrarToast('Número eliminado de la cuenta de Meta');
+  } catch (error) {
+    mostrarToast(error.message, 'error');
+    boton.disabled = false;
+  }
+});
 
 document.getElementById('btnDesvincularWhatsapp')?.addEventListener('click', async (e) => {
   const confirmado = await confirmar({
@@ -379,6 +458,7 @@ document.getElementById('formWhatsapp')?.addEventListener('submit', (e) => {
       e.target.querySelector('button[type="submit"]').textContent = 'Verificar y conectar';
       document.getElementById('waCodigoSms').focus();
       mostrarToast('Te enviamos un SMS con un código de 6 dígitos');
+      cargarNumerosWhatsapp();
       return;
     }
 

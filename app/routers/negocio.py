@@ -193,6 +193,103 @@ def verificar_codigo_whatsapp(
     return WhatsAppEstadoResponse(conectado=True, phone_number_id=negocio.whatsapp_phone_number_id)
 
 
+def _enmascarar(numero: str) -> str:
+    """+56 9 9495 1451 -> +56 9 •••• 1451 (para números de otros negocios)."""
+    digitos = re.sub(r"\D", "", numero)
+    return f"+{digitos[:3]} •••• {digitos[-4:]}" if len(digitos) > 7 else "••••"
+
+
+def _numeros_del_waba(waba_id: str, headers: dict) -> list[dict]:
+    resp = requests.get(
+        f"{GRAPH_URL}/{waba_id}/phone_numbers",
+        headers=headers,
+        params={
+            "fields": "id,display_phone_number,verified_name,status,code_verification_status,quality_rating",
+            "limit": 100,
+        },
+        timeout=10,
+    )
+    if not resp.ok:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=_error_meta(resp, "No se pudieron leer los números de la cuenta de Meta"),
+        )
+    return resp.json().get("data", [])
+
+
+@router.get("/{id_negocio}/whatsapp/numeros")
+def listar_numeros_whatsapp(
+    db: Session = Depends(get_db),
+    negocio: Negocio = Depends(obtener_negocio_propio),
+):
+    """Números dados de alta en el WABA de TrepAI (Meta permite 2 sin verificar)."""
+    waba_id, master_token = _credenciales_maestras_meta()
+    headers = {"Authorization": f"Bearer {master_token}"}
+    numeros = _numeros_del_waba(waba_id, headers)
+
+    ids = [n.get("id") for n in numeros]
+    dueños = {
+        n.whatsapp_phone_number_id: n.id_negocio
+        for n in db.query(Negocio).filter(Negocio.whatsapp_phone_number_id.in_(ids)).all()
+    }
+
+    resultado = []
+    for n in numeros:
+        id_dueño = dueños.get(n.get("id"))
+        de_otro = id_dueño is not None and id_dueño != negocio.id_negocio
+        resultado.append({
+            "phone_number_id": n.get("id"),
+            "numero": _enmascarar(n.get("display_phone_number", "")) if de_otro else n.get("display_phone_number"),
+            "nombre": None if de_otro else n.get("verified_name"),
+            "estado": n.get("status"),
+            "verificacion": n.get("code_verification_status"),
+            "calidad": n.get("quality_rating"),
+            "vinculado_a": "este" if id_dueño == negocio.id_negocio else ("otro" if de_otro else None),
+            "se_puede_eliminar": not de_otro,
+        })
+    return {"limite": 2, "numeros": resultado}
+
+
+@router.delete("/{id_negocio}/whatsapp/numeros/{phone_number_id}")
+def eliminar_numero_whatsapp(
+    phone_number_id: str,
+    db: Session = Depends(get_db),
+    negocio: Negocio = Depends(obtener_negocio_propio),
+):
+    """Saca un número del WABA de Meta para liberar cupo."""
+    waba_id, master_token = _credenciales_maestras_meta()
+    headers = {"Authorization": f"Bearer {master_token}"}
+
+    if phone_number_id not in {n.get("id") for n in _numeros_del_waba(waba_id, headers)}:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ese número no está en la cuenta de Meta")
+
+    dueño = db.query(Negocio).filter(Negocio.whatsapp_phone_number_id == phone_number_id).first()
+    if dueño and dueño.id_negocio != negocio.id_negocio:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Ese número está conectado a otro negocio de TrepAI; no puedes eliminarlo desde aquí",
+        )
+
+    # Si estaba registrado en Cloud API, primero se da de baja (si no lo estaba, Meta da error y se ignora)
+    requests.post(f"{GRAPH_URL}/{phone_number_id}/deregister", headers=headers, timeout=10)
+
+    resp = requests.delete(f"{GRAPH_URL}/{phone_number_id}", headers=headers, timeout=10)
+    if not resp.ok:
+        detalle = _error_meta(resp, "Meta no permitió eliminar el número")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{detalle}. Si persiste, elimínalo desde el Administrador de WhatsApp en business.facebook.com",
+        )
+
+    if dueño:
+        dueño.whatsapp_phone_number_id = None
+        dueño.whatsapp_token = None
+        dueño.estado_bot = False
+        db.commit()
+
+    return {"ok": True, "desvinculado_de_este_negocio": dueño is not None}
+
+
 @router.post("", response_model=NegocioResponse, status_code=status.HTTP_201_CREATED)
 def crear_negocio(
     datos: NegocioCreate,

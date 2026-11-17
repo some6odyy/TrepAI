@@ -71,6 +71,9 @@ const api = {
   verificarCodigoWhatsapp: (idNegocio, datos) =>
     apiFetch(`/negocio/${idNegocio}/whatsapp/verificar-codigo`, { method: 'POST', body: datos }),
   desvincularWhatsapp: (id) => apiFetch(`/negocio/${id}/whatsapp`, { method: 'DELETE' }),
+  listarNumerosWhatsapp: (id) => apiFetch(`/negocio/${id}/whatsapp/numeros`),
+  eliminarNumeroWhatsapp: (id, phoneId) =>
+    apiFetch(`/negocio/${id}/whatsapp/numeros/${encodeURIComponent(phoneId)}`, { method: 'DELETE' }),
 
   obtenerContexto: (id) => apiFetch(`/negocio/${id}/contexto`),
   actualizarContexto: (id, datos) => apiFetch(`/negocio/${id}/contexto`, { method: 'PUT', body: datos }),
