@@ -69,6 +69,22 @@ def _error_meta(resp, por_defecto: str) -> str:
         detalle += f" (Meta {codigo}{'/' + str(sub) if sub else ''})"
     return detalle
 
+def _buscar_numero_en_waba(waba_id: str, headers: dict, cc: str, numero_local: str) -> str | None:
+    """Devuelve el phone_number_id si el número ya está dado de alta en el WABA."""
+    resp = requests.get(
+        f"{GRAPH_URL}/{waba_id}/phone_numbers",
+        headers=headers,
+        params={"fields": "id,display_phone_number", "limit": 100},
+        timeout=10,
+    )
+    if not resp.ok:
+        return None
+    objetivo = cc + numero_local
+    for item in resp.json().get("data", []):
+        if re.sub(r"\D", "", item.get("display_phone_number", "")) == objetivo:
+            return item.get("id")
+    return None
+
 @router.post("/{id_negocio}/whatsapp/solicitar-codigo")
 def solicitar_codigo_whatsapp(
     datos: SolicitarCodigoWhatsApp,
@@ -79,26 +95,27 @@ def solicitar_codigo_whatsapp(
     headers = {"Authorization": f"Bearer {master_token}"}
     cc, numero_local = _separar_telefono_chile(datos.telefono)
 
-    # 1) Dar de alta el número en el WABA de TrepAI en Meta
-    resp_num = requests.post(
-        f"{GRAPH_URL}/{waba_id}/phone_numbers",
-        headers=headers,
-        json={
-            "cc": cc,
-            "phone_number": numero_local,
-            "verified_name": datos.nombre_visible.strip(),
-        },
-        timeout=10,
-    )
-    if not resp_num.ok:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=_error_meta(resp_num, "No se pudo registrar el número en Meta"),
-        )
-
-    phone_number_id = resp_num.json().get("id")
+        # 1) Reutilizar el número si ya existe en el WABA; si no, darlo de alta
+    phone_number_id = _buscar_numero_en_waba(waba_id, headers, cc, numero_local)
     if not phone_number_id:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Meta no devolvió el ID del número")
+        resp_num = requests.post(
+            f"{GRAPH_URL}/{waba_id}/phone_numbers",
+            headers=headers,
+            json={
+                "cc": cc,
+                "phone_number": numero_local,
+                "verified_name": datos.nombre_visible.strip(),
+            },
+            timeout=10,
+        )
+        if not resp_num.ok:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=_error_meta(resp_num, "No se pudo registrar el número en Meta"),
+            )
+        phone_number_id = resp_num.json().get("id")
+        if not phone_number_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Meta no devolvió el ID del número")
 
     ya_usado = (
         negocio.whatsapp_phone_number_id != phone_number_id
