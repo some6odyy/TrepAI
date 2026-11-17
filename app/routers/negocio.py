@@ -50,6 +50,24 @@ def _credenciales_maestras_meta() -> tuple[str, str]:
         )
     return waba_id, master_token
 
+def _error_meta(resp, por_defecto: str) -> str:
+    """Extrae el motivo real de un error de la Graph API de Meta."""
+    try:
+        err = resp.json().get("error", {})
+    except ValueError:
+        return f"{por_defecto} (HTTP {resp.status_code})"
+    print("ERROR META:", resp.status_code, err)  # se ve en los logs de Vercel/uvicorn
+    partes = [
+        err.get("error_user_title"),
+        err.get("error_user_msg"),
+        (err.get("error_data") or {}).get("details"),
+    ]
+    detalle = " — ".join(p for p in partes if p) or err.get("message") or por_defecto
+    codigo = err.get("code")
+    sub = err.get("error_subcode")
+    if codigo:
+        detalle += f" (Meta {codigo}{'/' + str(sub) if sub else ''})"
+    return detalle
 
 @router.post("/{id_negocio}/whatsapp/solicitar-codigo")
 def solicitar_codigo_whatsapp(
@@ -73,8 +91,10 @@ def solicitar_codigo_whatsapp(
         timeout=10,
     )
     if not resp_num.ok:
-        detalle = resp_num.json().get("error", {}).get("message", "No se pudo registrar el número en Meta")
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detalle)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=_error_meta(resp_num, "No se pudo registrar el número en Meta"),
+        )
 
     phone_number_id = resp_num.json().get("id")
     if not phone_number_id:
@@ -98,8 +118,10 @@ def solicitar_codigo_whatsapp(
         timeout=10,
     )
     if not resp_sms.ok:
-        detalle = resp_sms.json().get("error", {}).get("message", "No se pudo enviar el SMS de verificación")
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detalle)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=_error_meta(resp_sms, "No se pudo enviar el SMS de verificación"),
+        )
 
     negocio.whatsapp_phone_number_id = phone_number_id
     db.commit()
