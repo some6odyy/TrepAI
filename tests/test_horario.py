@@ -73,7 +73,8 @@ def test_api():
 
     def cita(fecha, hora, tel="+56911111111"):
         return c.post(f"/negocio/{idn}/agenda", headers=h, json={
-            "telefono_cliente": tel, "id_servicio": serv, "fecha_cita": fecha, "hora_cita": hora})
+            "telefono_cliente": tel, "nombre_cliente": "Cliente Test", "correo_cliente": "cliente@test.cl",
+        "id_servicio": serv, "fecha_cita": fecha, "hora_cita": hora})
 
     assert cita("2026-12-07", "10:00:00").status_code == 201
     r = cita("2026-12-07", "09:30:00"); assert r.status_code == 422 and "horario" in r.json()["detail"].lower()

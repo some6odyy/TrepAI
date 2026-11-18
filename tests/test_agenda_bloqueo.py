@@ -30,7 +30,8 @@ def preparar():
 
 def cita(h, idn, serv, hora, tel="+56911111111"):
     return c.post(f"/negocio/{idn}/agenda", headers=h, json={
-        "telefono_cliente": tel, "id_servicio": serv, "fecha_cita": "2026-12-01", "hora_cita": hora})
+        "telefono_cliente": tel, "nombre_cliente": "Cliente Test", "correo_cliente": "cliente@test.cl",
+        "id_servicio": serv, "fecha_cita": "2026-12-01", "hora_cita": hora})
 
 
 def test_todo():

@@ -48,7 +48,8 @@ def test_marcador():
 
 def test_flujo():
     h, idn = preparar()
-    marcador = "[[AGENDAR|degradado|2026-11-12|16:00]]"
+    datos = "|Juan Pérez|juan@gmail.com|+56 9 1111 1111"
+    marcador = "[[AGENDAR|degradado|2026-11-12|16:00" + datos + "]]"
 
     # Interruptor apagado: no agenda y el marcador no llega al cliente
     r = enviar(idn, marcador)
@@ -57,10 +58,18 @@ def test_flujo():
 
     c.put(f"/negocio/{idn}/contexto", headers=h, json={"agendar_automatico": True})
 
+    # Sin nombre/correo/teléfono no agenda: los pide
+    r = enviar(idn, "[[AGENDAR|degradado|2026-11-12|16:00]]")
+    assert "necesito" in r and "correo" in r, r
+    r = enviar(idn, "[[AGENDAR|degradado|2026-11-12|16:00|Juan|no-es-correo|56911111111]]")
+    assert "Revisa el correo" in r, r
+    assert c.get(f"/negocio/{idn}/agenda", headers=h).json() == []
+
     r = enviar(idn, marcador)
     assert "Reservé" in r and "jueves 12-11" in r and "16:00" in r, r
     citas = c.get(f"/negocio/{idn}/agenda", headers=h).json()
     assert len(citas) == 1 and citas[0]["estado_cita"] == "pendiente"
+    assert citas[0]["correo_cliente"] == "juan@gmail.com" and citas[0]["telefono_contacto"] == "56911111111"
 
     # El mismo cliente repite: no se duplica
     assert "Ya tienes reservado" in enviar(idn, marcador)
@@ -68,11 +77,15 @@ def test_flujo():
     r = enviar(idn, marcador, tel="56922222222")
     assert "ya están tomadas" in r and "16:30" in r, r
     # Fuera de horario
-    assert "fuera de nuestro horario" in enviar(idn, "[[AGENDAR|Degradado|2026-11-12|20:00]]", tel="56933333333")
+    assert "fuera de nuestro horario" in enviar(idn, "[[AGENDAR|Degradado|2026-11-12|20:00" + datos + "]]", tel="56933333333")
     # Hora pasada
-    assert "ya pasó" in enviar(idn, "[[AGENDAR|Degradado|2026-11-09|12:00]]", tel="56933333333")
+    assert "ya pasó" in enviar(idn, "[[AGENDAR|Degradado|2026-11-09|12:00" + datos + "]]", tel="56933333333")
     # Servicio inexistente
-    assert "No encontré" in enviar(idn, "[[AGENDAR|Tinte|2026-11-12|12:00]]", tel="56933333333")
+    assert "No encontré" in enviar(idn, "[[AGENDAR|Tinte|2026-11-12|12:00" + datos + "]]", tel="56933333333")
+
+    # Menos de 2 h de anticipación (AHORA = martes 10:00): rechaza y sugiere desde las 12:00
+    r = enviar(idn, "[[AGENDAR|Degradado|2026-11-10|11:00" + datos + "]]", tel="56933333333")
+    assert "2 horas de anticipación" in r and "12:00" in r, r
 
     assert len(c.get(f"/negocio/{idn}/agenda", headers=h).json()) == 1
 

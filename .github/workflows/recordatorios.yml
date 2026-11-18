@@ -1,0 +1,33 @@
+# Ejecuta los recordatorios y confirmaciones de citas cada 5 minutos.
+# Vercel Hobby solo permite crons diarios, por eso lo dispara GitHub Actions.
+#
+# Configurar en GitHub > Settings > Secrets and variables > Actions:
+#   TREPAI_URL   -> ej. https://trepai.vercel.app   (sin "/" al final)
+#   CRON_SECRET  -> el mismo valor que CRON_SECRET en Vercel
+#
+# Nota: GitHub puede atrasar los crons algunos minutos en horas de alta
+# carga; el Dashboard y el webhook también ejecutan los recordatorios "de
+# pasada", así que un atraso no hace que se pierdan.
+name: Recordatorios de citas
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  recordatorios:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Ejecutar /tareas/recordatorios
+        env:
+          TREPAI_URL: ${{ secrets.TREPAI_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$TREPAI_URL" ] || [ -z "$CRON_SECRET" ]; then
+            echo "Faltan los secrets TREPAI_URL o CRON_SECRET"; exit 1
+          fi
+          curl -fsS --max-time 60 -X POST \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "$TREPAI_URL/tareas/recordatorios"

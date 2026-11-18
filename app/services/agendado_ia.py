@@ -6,7 +6,9 @@ Cómo funciona:
 1. Cuando el interruptor está encendido, el prompt le pide a la IA que, en
    cuanto el cliente haya dado servicio + fecha + hora, NO confirme la cita
    ella misma, sino que responda con un marcador:
-       [[AGENDAR|Degradado|2026-11-12|16:00]]
+       [[AGENDAR|Degradado|2026-11-12|16:00|Juan Pérez|juan@gmail.com|56912345678]]
+   (los 3 últimos campos —nombre, correo y teléfono para recordatorios— son
+   obligatorios: si faltan, el backend se los pide al cliente).
 2. Este módulo detecta el marcador, busca el servicio en el catálogo y crea
    la cita en estado "pendiente" con agenda_service.crear_cita_validada —
    la MISMA función que usa el agendado manual del Dashboard. Así se
@@ -26,18 +28,22 @@ from datetime import date, datetime, time, timedelta
 from sqlalchemy.orm import Session
 
 from app.models.agenda import Agenda
+from app.models.cliente import Cliente
 from app.models.negocio import Negocio
 from app.models.servicio import Servicio
 from app.services import agenda_service
 from app.services.agenda_service import (
+    AnticipacionInsuficienteError,
     CitaActivaExistenteError,
+    DatosContactoError,
     HorarioOcupadoError,
     SinCitaActivaError,
 )
 from app.services.horario_service import FueraDeHorarioError, validar_dentro_de_horario
 
 _RE_CITA = re.compile(
-    r"\[\[\s*(?P<accion>AGENDAR|REAGENDAR)\s*\|\s*(?P<servicio>[^|\]]+?)\s*\|\s*(?P<fecha>\d{4}-\d{2}-\d{2})\s*\|\s*(?P<hora>\d{1,2}:\d{2})\s*\]\]",
+    r"\[\[\s*(?P<accion>AGENDAR|REAGENDAR)\s*\|\s*(?P<servicio>[^|\]]+?)\s*\|\s*(?P<fecha>\d{4}-\d{2}-\d{2})\s*\|\s*(?P<hora>\d{1,2}:\d{2})\s*"
+    r"(?:\|\s*(?P<nombre>[^|\]]*?)\s*(?:\|\s*(?P<correo>[^|\]]*?)\s*(?:\|\s*(?P<telefono>[^|\]]*?)\s*)?)?)?\]\]",
     re.IGNORECASE,
 )
 _RE_REAGENDAR_SIN_SERVICIO = re.compile(
@@ -57,6 +63,9 @@ class SolicitudCita:
     servicio: str | None = None
     fecha: date | None = None
     hora: time | None = None
+    nombre: str | None = None
+    correo: str | None = None
+    telefono: str | None = None
 
 
 def instrucciones_para_prompt() -> str:
@@ -65,10 +74,17 @@ def instrucciones_para_prompt() -> str:
         "AGENDADO AUTOMÁTICO ACTIVADO: tú puedes reservar, reagendar y cancelar horas.\n"
         "- Interpreta fechas relativas (\"mañana\", \"el jueves\") con la fecha actual. "
         "Si el día de la semana y el número del día no coinciden, pregunta cuál es el correcto.\n"
-        "- NUEVA RESERVA (solo si el cliente NO tiene una cita activa): cuando tengas servicio del catálogo, "
-        "fecha y hora, responde ÚNICAMENTE con esta línea sin ningún otro texto:\n"
-        "[[AGENDAR|<nombre exacto del servicio>|<AAAA-MM-DD>|<HH:MM>]]\n"
-        "  Ejemplo: [[AGENDAR|Degradado|2026-11-14|16:00]]\n"
+        f"- Solo se agenda con al menos {agenda_service.ANTICIPACION_MINIMA_HORAS} horas de anticipación; "
+        "no ofrezcas horas más cercanas que eso.\n"
+        "- Para RESERVAR una hora nueva SIEMPRE necesitas: servicio, fecha, hora, nombre completo, "
+        "correo electrónico y número de teléfono donde enviar los recordatorios y la confirmación. "
+        "Pide lo que falte (puedes ofrecer usar el mismo número de WhatsApp desde el que escribe, "
+        "pero que el cliente lo confirme). Si en 'Datos guardados del cliente' ya hay nombre o correo, "
+        "pregúntale si quiere usar esos mismos.\n"
+        "- NUEVA RESERVA (solo si el cliente NO tiene una cita activa): cuando tengas TODOS esos datos, "
+        "responde ÚNICAMENTE con esta línea sin ningún otro texto:\n"
+        "[[AGENDAR|<nombre exacto del servicio>|<AAAA-MM-DD>|<HH:MM>|<nombre completo>|<correo>|<teléfono con código de país>]]\n"
+        "  Ejemplo: [[AGENDAR|Degradado|2026-11-14|16:00|Juan Pérez|juan.perez@gmail.com|56912345678]]\n"
         "- CAMBIAR O REAGENDAR HORA (si el cliente ya tiene una cita activa y pide moverla): "
         "NUNCA uses AGENDAR; responde ÚNICAMENTE con:\n"
         "[[REAGENDAR|<nombre exacto del servicio>|<AAAA-MM-DD>|<HH:MM>]]\n"
@@ -102,6 +118,9 @@ def extraer_solicitud(texto: str) -> tuple[str, SolicitudCita | None]:
             servicio=coincidencia["servicio"].strip(),
             fecha=fecha,
             hora=hora,
+            nombre=(coincidencia["nombre"] or "").strip() or None,
+            correo=(coincidencia["correo"] or "").strip() or None,
+            telefono=(coincidencia["telefono"] or "").strip() or None,
         )
 
     coincidencia_sin_serv = _RE_REAGENDAR_SIN_SERVICIO.search(raw)
@@ -152,8 +171,9 @@ def _sugerir_horarios(
     sugerencias: list[time] = []
     actual = datetime.combine(fecha, desde)
     fin_del_dia = datetime.combine(fecha, time(23, 59))
+    minimo = ahora + timedelta(hours=agenda_service.ANTICIPACION_MINIMA_HORAS)
     while actual <= fin_del_dia and len(sugerencias) < MAX_SUGERENCIAS:
-        if actual > ahora:
+        if actual >= minimo:
             try:
                 validar_dentro_de_horario(negocio.horario, fecha, actual.time(), duracion)
                 agenda_service.validar_horario_libre(
@@ -199,6 +219,10 @@ def procesar_solicitud(
     if inicio <= ahora:
         return f"Esa hora ({_fecha_legible(solicitud.fecha)} a las {solicitud.hora:%H:%M}) ya pasó. ¿Para qué otro día u hora la quieres?"
 
+    minimo = ahora + timedelta(hours=agenda_service.ANTICIPACION_MINIMA_HORAS)
+    if inicio < minimo:
+        return _mensaje_anticipacion(db, negocio, servicios, solicitud, ahora, minimo)
+
     if solicitud.accion == "REAGENDAR":
         existente = agenda_service.obtener_cita_activa_cliente(db, negocio.id_negocio, id_cliente)
         if existente is None:
@@ -220,7 +244,10 @@ def procesar_solicitud(
                 nueva_hora=solicitud.hora,
                 nuevo_servicio=servicio_nuevo,
                 horario_negocio=negocio.horario,
+                ahora_local=ahora,
             )
+        except AnticipacionInsuficienteError as err:
+            return _mensaje_anticipacion(db, negocio, servicios, solicitud, ahora, err.minimo)
         except FueraDeHorarioError:
             horario = f" Nuestro horario es: {negocio.horario}." if negocio.horario else ""
             return f"Esa hora queda fuera de nuestro horario de atención.{horario} ¿A qué otra hora la cambiamos?"
@@ -244,7 +271,8 @@ def procesar_solicitud(
 
         return (
             f"¡Listo! 🙌 Cambié tu hora de *{servicio_nuevo.nombre_servicio}* para el {cuando}.\n"
-            f"La cita anterior quedó liberada y esta nueva hora queda *pendiente* hasta que el equipo la confirme."
+            f"La cita anterior quedó liberada y esta nueva hora queda *pendiente* hasta que el equipo la confirme. "
+            f"Te llegarán los recordatorios con la nueva hora."
         )
 
     # Acción: AGENDAR (nueva cita)
@@ -263,7 +291,15 @@ def procesar_solicitud(
             hora=solicitud.hora,
             horario_negocio=negocio.horario,
             permitir_duplicado_cliente=False,
+            nombre_contacto=solicitud.nombre,
+            correo_contacto=solicitud.correo,
+            telefono_contacto=solicitud.telefono,
+            ahora_local=ahora,
         )
+    except DatosContactoError as err:
+        return _mensaje_datos_contacto(err)
+    except AnticipacionInsuficienteError as err:
+        return _mensaje_anticipacion(db, negocio, servicios, solicitud, ahora, err.minimo)
     except CitaActivaExistenteError as err:
         actual_txt = f"*{_fecha_legible(err.cita.fecha_cita)}* a las *{err.cita.hora_cita:%H:%M}*"
         mismo_horario = (
@@ -294,7 +330,56 @@ def procesar_solicitud(
             )
         return f"El {_fecha_legible(solicitud.fecha)} ya no me quedan horas libres después de las {solicitud.hora:%H:%M}. ¿Te acomoda otro día?"
 
+    # Guardamos nombre/correo en la ficha del cliente para la próxima reserva
+    cliente = db.query(Cliente).filter(Cliente.id_cliente == id_cliente).first()
+    if cliente is not None:
+        if not cliente.nombre_cliente and solicitud.nombre:
+            cliente.nombre_cliente = solicitud.nombre.strip()[:100]
+        correo_ok = agenda_service.normalizar_correo(solicitud.correo)
+        if correo_ok:
+            cliente.correo = correo_ok
+        db.commit()
+
     return (
         f"¡Listo! 🙌 Reservé *{servicio.nombre_servicio}* para el {cuando}.\n"
-        f"Tu hora queda *pendiente* hasta que el equipo la confirme."
+        f"Tu hora queda *pendiente* hasta que el equipo la confirme. "
+        f"Te enviaremos un recordatorio el día antes y te pediremos confirmar 1 hora antes."
     )
+
+
+_NOMBRES_CAMPO = {"nombre": "tu nombre completo", "correo": "tu correo electrónico", "teléfono": "un número de teléfono"}
+
+
+def _mensaje_datos_contacto(err: DatosContactoError) -> str:
+    partes = [_NOMBRES_CAMPO.get(c, c) for c in err.faltantes]
+    texto = ""
+    if partes:
+        lista = partes[0] if len(partes) == 1 else ", ".join(partes[:-1]) + " y " + partes[-1]
+        texto = f"Para dejar tu hora reservada necesito {lista} para enviarte los recordatorios y la confirmación."
+    if err.invalidos:
+        malos = " y ".join("el correo" if c == "correo" else "el teléfono" for c in err.invalidos)
+        texto += (" " if texto else "") + f"Revisa {malos}, parece que no está bien escrito."
+    return texto + " ¿Me lo compartes?"
+
+
+def _mensaje_anticipacion(
+    db: Session,
+    negocio: Negocio,
+    servicios: list[Servicio],
+    solicitud: SolicitudCita,
+    ahora: datetime,
+    minimo: datetime,
+) -> str:
+    horas = agenda_service.ANTICIPACION_MINIMA_HORAS
+    base = f"Las horas se agendan con al menos *{horas} horas de anticipación*."
+    servicio = buscar_servicio(solicitud.servicio or "", servicios) if solicitud.servicio else None
+    if servicio is not None:
+        desde = minimo.time().replace(second=0, microsecond=0)
+        # redondea hacia arriba al siguiente bloque de 30 min
+        extra = (-desde.minute) % PASO_SUGERENCIAS_MIN
+        inicio = datetime.combine(minimo.date(), desde) + timedelta(minutes=extra)
+        libres = _sugerir_horarios(db, negocio, servicio, inicio.date(), inicio.time(), ahora)
+        if libres:
+            opciones = ", ".join(f"{h:%H:%M}" for h in libres)
+            return f"{base} Para el {_fecha_legible(inicio.date())} tengo libre: {opciones}. ¿Te sirve alguna?"
+    return f"{base} Lo más pronto es desde las {minimo:%H:%M} del {_fecha_legible(minimo.date())}. ¿Qué otra hora te acomoda?"

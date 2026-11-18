@@ -185,13 +185,23 @@ def desvincular_whatsapp(headers, id_negocio):
     assert r4.json()["status"] == "negocio_no_encontrado", f"esperaba 'negocio_no_encontrado', llegó {r4.json()}"
 
 
+def _proximo_dia_habil() -> str:
+    """Un martes futuro (dentro del horario Lun-Sáb y con más de 2 h de anticipación)."""
+    from datetime import date, timedelta
+    d = date.today() + timedelta(days=3)
+    while d.weekday() != 1:
+        d += timedelta(days=1)
+    return d.isoformat()
+
+
 @paso("Agendar una cita manualmente desde el Dashboard")
 def agendar_cita(headers, id_negocio, id_servicio):
     r = requests.post(
         f"{BASE_URL}/negocio/{id_negocio}/agenda", timeout=TIMEOUT, headers=headers,
         json={
             "telefono_cliente": "+56988776655", "nombre_cliente": "Cliente de prueba",
-            "id_servicio": id_servicio, "fecha_cita": "2026-09-15", "hora_cita": "16:00:00",
+            "correo_cliente": "cliente.prueba@example.com",
+            "id_servicio": id_servicio, "fecha_cita": _proximo_dia_habil(), "hora_cita": "16:00:00",
         },
     )
     assert r.status_code == 201, f"esperaba 201, llegó {r.status_code}: {r.text}"

@@ -11,10 +11,14 @@ from app.models.servicio import Servicio
 from app.models.cliente import Cliente
 from app.services.cliente_service import obtener_o_crear_cliente
 from app.services import agenda_service
-from app.services.agenda_service import HorarioOcupadoError
+from app.services.agenda_service import (
+    AnticipacionInsuficienteError,
+    DatosContactoError,
+    HorarioOcupadoError,
+)
+from app.services import recordatorios
 from app.services.horario_service import FueraDeHorarioError, validar_dentro_de_horario
 from app.schemas.agenda import CitaCreate, CitaEstadoUpdate, CitaResponse
-from app.services.notificacion_service import notificar_cita_confirmada
 
 router = APIRouter(prefix="/negocio/{id_negocio}/agenda", tags=["Agenda"])
 
@@ -23,13 +27,18 @@ def _a_response(cita: Agenda, cliente: Cliente, servicio: Servicio) -> CitaRespo
     return CitaResponse(
         id_agenda=cita.id_agenda,
         id_cliente=cliente.id_cliente,
-        nombre_cliente=cliente.nombre_cliente,
+        nombre_cliente=cita.nombre_contacto or cliente.nombre_cliente,
         telefono_cliente=cliente.telefono,
+        correo_cliente=cita.correo_contacto or cliente.correo,
+        telefono_contacto=cita.telefono_contacto,
         id_servicio=servicio.id_servicio,
         nombre_servicio=servicio.nombre_servicio,
         fecha_cita=cita.fecha_cita,
         hora_cita=cita.hora_cita,
         estado_cita=cita.estado_cita,
+        recordatorio_24h_enviado=cita.recordatorio_24h_enviado,
+        confirmacion_1h_enviada=cita.confirmacion_1h_enviada,
+        respuesta_cliente=cita.respuesta_cliente,
     )
 
 
@@ -68,7 +77,14 @@ def crear_cita(
     if servicio is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ese servicio no existe en este negocio")
 
-    cliente = obtener_o_crear_cliente(db, datos.telefono_cliente, datos.nombre_cliente)
+    try:
+        nombre, correo, telefono = agenda_service.validar_contacto(
+            datos.nombre_cliente, datos.correo_cliente, datos.telefono_cliente
+        )
+    except DatosContactoError as error:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error))
+
+    cliente = obtener_o_crear_cliente(db, telefono, nombre, correo)
 
     try:
         nueva_cita = agenda_service.crear_cita_validada(
@@ -79,12 +95,18 @@ def crear_cita(
             fecha=datos.fecha_cita,
             hora=datos.hora_cita,
             horario_negocio=negocio.horario,
+            nombre_contacto=nombre,
+            correo_contacto=correo,
+            telefono_contacto=telefono,
         )
-    except FueraDeHorarioError as error:
+    except (FueraDeHorarioError, AnticipacionInsuficienteError, DatosContactoError) as error:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error))
     except HorarioOcupadoError as error:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error))
 
+    # Aviso "cita agendada" al cliente (WhatsApp + correo) apenas se crea
+    recordatorios.procesar_cita(db, negocio, nueva_cita.id_agenda)
+    db.refresh(nueva_cita)
     return _a_response(nueva_cita, cliente, servicio)
 
 
@@ -135,7 +157,7 @@ def actualizar_estado_cita(
     db.refresh(cita)
 
     if datos.estado_cita == "confirmada" and estado_anterior != "confirmada":
-        notificar_cita_confirmada(negocio, cita, cliente, servicio)
+        recordatorios.notificar_confirmacion_del_local(db, negocio, cita, cliente, servicio)
 
     return _a_response(cita, cliente, servicio)
 

@@ -13,9 +13,8 @@ from sqlalchemy.orm import Session
 
 from app.db.database import get_db
 from app.core.config import WHATSAPP_VERIFY_TOKEN
-from app.core.security import descifrar_texto
 from app.models.negocio import Negocio
-from app.services import whatsapp_service, chat_service
+from app.services import whatsapp_service, chat_service, recordatorios
 
 router = APIRouter(prefix="/webhook", tags=["Webhook WhatsApp"])
 
@@ -52,24 +51,26 @@ async def recibir_mensaje(request: Request, db: Session = Depends(get_db)):
     if negocio is None:
         return {"status": "negocio_no_encontrado"}
 
-    # 3) RF-04: si el administrador pausó el bot, no respondemos
-    if not negocio.estado_bot:
-        return {"status": "bot_inactivo"}
+    # 3) Respuesta SÍ/NO al mensaje de confirmación de 1 hora antes: se
+    #    aplica a la cita sin pasar por la IA (funciona aunque el bot esté pausado).
+    respuesta = chat_service.procesar_respuesta_confirmacion(db, negocio, telefono_cliente, texto_mensaje)
 
-    # 4-7) Guardar mensaje, prompt dinámico, IA e historial (RF-05/07/08)
-    respuesta = chat_service.procesar_mensaje(db, negocio, telefono_cliente, texto_mensaje)
+    if respuesta is None:
+        # 4) RF-04: si el administrador pausó el bot, no respondemos con IA, pero
+        #    el mensaje queda en Conversaciones para responderlo a mano.
+        if not negocio.estado_bot:
+            chat_service.guardar_mensaje_sin_respuesta(db, negocio, telefono_cliente, texto_mensaje)
+            return {"status": "bot_inactivo"}
+
+        # 5-7) Guardar mensaje, prompt dinámico, IA e historial (RF-05/07/08)
+        respuesta = chat_service.procesar_mensaje(db, negocio, telefono_cliente, texto_mensaje)
 
     # 8) Responder al cliente por WhatsApp (RF-09)
-    raw_token = (negocio.whatsapp_token or "").strip()
-    token_whatsapp = raw_token if raw_token.startswith("EAA") else descifrar_texto(raw_token)
-    if not token_whatsapp:
+    enviado = whatsapp_service.enviar_respuesta_negocio(negocio, telefono_cliente, respuesta)
+
+    # 9) De pasada: avisos de citas recién agendadas y recordatorios vencidos
+    recordatorios.ejecutar_si_toca(db, negocio.id_negocio)
+
+    if enviado is None:
         return {"status": "procesado", "enviado_a_whatsapp": False, "motivo": "whatsapp_no_conectado"}
-
-    enviado = whatsapp_service.enviar_mensaje(
-        telefono_destino=telefono_cliente,
-        texto=respuesta,
-        phone_number_id=negocio.whatsapp_phone_number_id,
-        token=token_whatsapp,
-    )
-
     return {"status": "procesado", "enviado_a_whatsapp": enviado}

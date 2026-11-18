@@ -1,5 +1,8 @@
 """RF-05 | Historial auditable: el administrador revisa qué habló el bot
-con cada cliente. Fundamental para detectar respuestas erróneas de la IA."""
+con cada cliente. Fundamental para detectar respuestas erróneas de la IA.
+Además, el administrador puede responder a mano desde el Dashboard."""
+from datetime import timedelta
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -9,7 +12,9 @@ from app.core.deps import obtener_negocio_propio
 from app.models.negocio import Negocio
 from app.models.conversacion import Conversacion, Mensaje
 from app.models.cliente import Cliente
-from app.schemas.conversacion import ConversacionResponse, MensajeResponse
+from app.core.tiempo import ahora_utc
+from app.schemas.conversacion import ConversacionResponse, MensajeResponse, ResponderRequest
+from app.services import recordatorios, whatsapp_service
 
 router = APIRouter(prefix="/negocio/{id_negocio}/conversaciones", tags=["Historial"])
 
@@ -19,17 +24,27 @@ def listar_conversaciones(
     db: Session = Depends(get_db),
     negocio: Negocio = Depends(obtener_negocio_propio),
 ):
-    """Lista todas las conversaciones del negocio, más recientes primero,
-    con la cantidad de mensajes de cada una."""
+    """Lista todas las conversaciones del negocio, con actividad más reciente
+    primero, con la cantidad de mensajes de cada una."""
     resultados = (
-        db.query(Conversacion, Cliente, func.count(Mensaje.id_mensaje))
+        db.query(Conversacion, Cliente, func.count(Mensaje.id_mensaje), func.max(Mensaje.fecha_hora))
         .join(Cliente, Conversacion.id_cliente == Cliente.id_cliente)
         .outerjoin(Mensaje, Mensaje.id_conversacion == Conversacion.id_conversacion)
         .filter(Conversacion.id_negocio == negocio.id_negocio)
         .group_by(Conversacion.id_conversacion, Cliente.id_cliente)
-        .order_by(Conversacion.fecha_inicio.desc())
         .all()
     )
+
+    # Último mensaje DEL CLIENTE por conversación -> ¿sigue abierta la ventana de 24 h?
+    ultimos_cliente = dict(
+        db.query(Mensaje.id_conversacion, func.max(Mensaje.fecha_hora))
+        .join(Conversacion, Mensaje.id_conversacion == Conversacion.id_conversacion)
+        .filter(Conversacion.id_negocio == negocio.id_negocio, Mensaje.emisor == "cliente")
+        .group_by(Mensaje.id_conversacion)
+        .all()
+    )
+    limite_ventana = ahora_utc() - timedelta(hours=recordatorios.VENTANA_META_HORAS)
+    resultados.sort(key=lambda r: r[3] or r[0].fecha_inicio, reverse=True)
 
     return [
         ConversacionResponse(
@@ -41,8 +56,13 @@ def listar_conversaciones(
             fecha_fin=conversacion.fecha_fin,
             estado=conversacion.estado,
             total_mensajes=total_mensajes,
+            ultima_actividad=ultima or conversacion.fecha_inicio,
+            puede_responder=bool(
+                ultimos_cliente.get(conversacion.id_conversacion)
+                and ultimos_cliente[conversacion.id_conversacion] >= limite_ventana
+            ),
         )
-        for conversacion, cliente, total_mensajes in resultados
+        for conversacion, cliente, total_mensajes, ultima in resultados
     ]
 
 
@@ -70,3 +90,54 @@ def listar_mensajes(
         .order_by(Mensaje.fecha_hora)
         .all()
     )
+
+
+@router.post("/{id_conversacion}/mensajes", response_model=MensajeResponse, status_code=status.HTTP_201_CREATED)
+def responder_conversacion(
+    id_conversacion: int,
+    datos: ResponderRequest,
+    db: Session = Depends(get_db),
+    negocio: Negocio = Depends(obtener_negocio_propio),
+):
+    """El administrador responde a mano al cliente por WhatsApp. El mensaje
+    queda en el historial con emisor "negocio"."""
+    fila = (
+        db.query(Conversacion, Cliente)
+        .join(Cliente, Conversacion.id_cliente == Cliente.id_cliente)
+        .filter(
+            Conversacion.id_conversacion == id_conversacion,
+            Conversacion.id_negocio == negocio.id_negocio,
+        )
+        .first()
+    )
+    if fila is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversación no encontrada")
+    conversacion, cliente = fila
+
+    if not recordatorios.ventana_abierta(db, negocio, cliente.telefono):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Pasaron más de 24 horas desde el último mensaje del cliente. WhatsApp solo "
+                "permite responder dentro de esa ventana; espera a que el cliente vuelva a escribir."
+            ),
+        )
+
+    texto = datos.texto.strip()
+    enviado = whatsapp_service.enviar_respuesta_negocio(negocio, cliente.telefono, texto)
+    if enviado is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Este negocio no tiene un número de WhatsApp conectado.",
+        )
+    if not enviado:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="WhatsApp no aceptó el mensaje. Intenta de nuevo en unos segundos.",
+        )
+
+    mensaje = Mensaje(id_conversacion=conversacion.id_conversacion, emisor="negocio", contenido=texto)
+    db.add(mensaje)
+    db.commit()
+    db.refresh(mensaje)
+    return mensaje

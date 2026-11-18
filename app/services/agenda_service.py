@@ -14,10 +14,18 @@ Reglas:
 - Una cita "pendiente" vence a las HORAS_VENCIMIENTO_PENDIENTE desde que se
   creó; al vencer pasa a "expirada" y el horario queda libre.
 - Las "cancelada" y "expirada" nunca bloquean.
+- No se puede agendar ni reagendar con menos de ANTICIPACION_MINIMA_HORAS
+  de anticipación (hora de Chile).
+- Toda cita nueva exige nombre, correo y teléfono de contacto: ahí se envían
+  los recordatorios y la confirmación.
 """
-from datetime import date, datetime, time, timedelta, timezone
+import re
+from datetime import date, datetime, time, timedelta
 
+from email_validator import EmailNotValidError, validate_email
 from sqlalchemy.orm import Session
+
+from app.core.tiempo import ahora_chile_naive, ahora_utc
 
 from app.models.agenda import Agenda
 from app.models.servicio import Servicio
@@ -26,6 +34,7 @@ from app.services.horario_service import validar_dentro_de_horario
 HORAS_VENCIMIENTO_PENDIENTE = 2
 DURACION_POR_DEFECTO_MIN = 30
 ESTADOS_QUE_BLOQUEAN = ("pendiente", "confirmada", "completada")
+ANTICIPACION_MINIMA_HORAS = 2
 
 
 class HorarioOcupadoError(Exception):
@@ -56,9 +65,90 @@ class SinCitaActivaError(Exception):
     """El cliente intentó reagendar o cancelar sin tener una cita activa."""
 
 
-def ahora_utc() -> datetime:
-    """Hora actual en UTC, sin tzinfo (así se guarda en la BD)."""
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+class AnticipacionInsuficienteError(Exception):
+    """La cita empieza antes de ANTICIPACION_MINIMA_HORAS desde ahora."""
+
+    def __init__(self, minimo: datetime, ya_paso: bool = False):
+        self.minimo = minimo
+        self.ya_paso = ya_paso
+        if ya_paso:
+            mensaje = "Esa hora ya pasó."
+        else:
+            mensaje = (
+                f"Las citas se agendan con al menos {ANTICIPACION_MINIMA_HORAS} horas de "
+                f"anticipación (desde las {minimo:%H:%M} del {minimo:%d-%m})."
+            )
+        super().__init__(mensaje)
+
+
+class DatosContactoError(Exception):
+    """Faltan o son inválidos el nombre, correo o teléfono de contacto."""
+
+    def __init__(self, faltantes: list[str], invalidos: list[str] | None = None):
+        self.faltantes = faltantes
+        self.invalidos = invalidos or []
+        partes = []
+        if faltantes:
+            partes.append("faltan: " + ", ".join(faltantes))
+        if self.invalidos:
+            partes.append("no son válidos: " + ", ".join(self.invalidos))
+        super().__init__("Para agendar se necesitan nombre, correo y teléfono (" + "; ".join(partes) + ").")
+
+
+def normalizar_telefono(telefono: str | None) -> str | None:
+    """'+56 9 1234 5678' / '912345678' -> '56912345678'. None si no parece un
+    número de WhatsApp válido (8 a 15 dígitos con código de país)."""
+    digitos = re.sub(r"\D", "", telefono or "")
+    if len(digitos) == 9 and digitos.startswith("9"):
+        digitos = "56" + digitos
+    if not 10 <= len(digitos) <= 15:
+        return None
+    return digitos
+
+
+def normalizar_correo(correo: str | None) -> str | None:
+    try:
+        return validate_email((correo or "").strip(), check_deliverability=False).normalized.lower()
+    except EmailNotValidError:
+        return None
+
+
+def validar_contacto(nombre: str | None, correo: str | None, telefono: str | None) -> tuple[str, str, str]:
+    """Devuelve (nombre, correo, telefono) normalizados o lanza DatosContactoError."""
+    faltantes, invalidos = [], []
+    nombre_ok = (nombre or "").strip()
+    if len(nombre_ok) < 2:
+        faltantes.append("nombre")
+    correo_ok = None
+    if not (correo or "").strip():
+        faltantes.append("correo")
+    else:
+        correo_ok = normalizar_correo(correo)
+        if correo_ok is None:
+            invalidos.append("correo")
+    telefono_ok = None
+    if not (telefono or "").strip():
+        faltantes.append("teléfono")
+    else:
+        telefono_ok = normalizar_telefono(telefono)
+        if telefono_ok is None:
+            invalidos.append("teléfono")
+    if faltantes or invalidos:
+        raise DatosContactoError(faltantes, invalidos)
+    return nombre_ok[:100], correo_ok, telefono_ok
+
+
+def validar_anticipacion(fecha: date, hora: time, ahora_local: datetime | None = None) -> None:
+    """Rechaza citas que empiezan en menos de ANTICIPACION_MINIMA_HORAS."""
+    ahora = (ahora_local or ahora_chile_naive()).replace(tzinfo=None)
+    inicio = datetime.combine(fecha, hora)
+    minimo = ahora + timedelta(hours=ANTICIPACION_MINIMA_HORAS)
+    if inicio < minimo:
+        raise AnticipacionInsuficienteError(minimo, ya_paso=inicio <= ahora)
+
+
+def inicio_cita(cita: Agenda) -> datetime:
+    return datetime.combine(cita.fecha_cita, cita.hora_cita)
 
 
 def duracion_minutos(servicio: Servicio) -> int:
@@ -150,13 +240,25 @@ def crear_cita_validada(
     hora: time,
     horario_negocio: str | None = None,
     permitir_duplicado_cliente: bool = True,
+    nombre_contacto: str | None = None,
+    correo_contacto: str | None = None,
+    telefono_contacto: str | None = None,
+    ahora_local: datetime | None = None,
 ) -> Agenda:
     """Crea una cita 'pendiente'. Desde el flujo IA pasa permitir_duplicado_cliente=False
-    para evitar que se dupliquen reservas cuando el cliente pide un cambio."""
+    para evitar que se dupliquen reservas cuando el cliente pide un cambio.
+
+    Exige nombre, correo y teléfono de contacto y al menos
+    ANTICIPACION_MINIMA_HORAS de anticipación."""
     if not permitir_duplicado_cliente:
         existente = obtener_cita_activa_cliente(db, id_negocio, id_cliente)
         if existente is not None:
             raise CitaActivaExistenteError(*existente)
+
+    nombre_contacto, correo_contacto, telefono_contacto = validar_contacto(
+        nombre_contacto, correo_contacto, telefono_contacto
+    )
+    validar_anticipacion(fecha, hora, ahora_local)
 
     validar_dentro_de_horario(horario_negocio, fecha, hora, duracion_minutos(servicio))
     validar_horario_libre(db, id_negocio, fecha, hora, duracion_minutos(servicio))
@@ -168,6 +270,9 @@ def crear_cita_validada(
         hora_cita=hora,
         estado_cita="pendiente",
         fecha_creacion=ahora_utc(),
+        nombre_contacto=nombre_contacto,
+        correo_contacto=correo_contacto,
+        telefono_contacto=telefono_contacto,
     )
     db.add(cita)
     db.commit()
@@ -183,9 +288,12 @@ def reagendar_cita_validada(
     nueva_hora: time,
     nuevo_servicio: Servicio | None = None,
     horario_negocio: str | None = None,
+    ahora_local: datetime | None = None,
 ) -> Agenda:
     """Mueve la cita activa más reciente del cliente a un nuevo día/hora
-    y cancela cualquier duplicado activo previo."""
+    y cancela cualquier duplicado activo previo. Conserva los datos de
+    contacto; los recordatorios se reprograman para la nueva hora."""
+    validar_anticipacion(nueva_fecha, nueva_hora, ahora_local)
     liberar_pendientes_vencidas(db, id_negocio)
     activas = (
         db.query(Agenda, Servicio)
@@ -224,6 +332,11 @@ def reagendar_cita_validada(
     cita.hora_cita = nueva_hora
     cita.estado_cita = "pendiente"
     cita.fecha_creacion = ahora_utc()
+    # Nueva hora = nuevos recordatorios (el aviso de "cita agendada" se reenvía con la hora nueva)
+    cita.aviso_reserva_enviado = None
+    cita.recordatorio_24h_enviado = None
+    cita.confirmacion_1h_enviada = None
+    cita.respuesta_cliente = None
     db.commit()
     db.refresh(cita)
     return cita

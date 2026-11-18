@@ -42,6 +42,18 @@ OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.4-mini")
 #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY", "6Tx_gPZKphFL3YldOKPEOnYR78mPEoLSzFZed6FzhBg=")
 
+# --- Recordatorios y confirmaciones de citas ---
+# Clave que el cron externo (GitHub Actions, cron-job.org, Vercel Cron) manda
+# para ejecutar /tareas/recordatorios. Vacía = endpoint desactivado.
+CRON_SECRET = os.getenv("CRON_SECRET", "").strip()
+# URL pública del Dashboard, para los enlaces de confirmar/cancelar del correo.
+APP_URL = os.getenv("APP_URL", "http://127.0.0.1:8000").rstrip("/")
+# Plantillas aprobadas por Meta para escribirle al cliente FUERA de la ventana
+# de 24 h (ver README). Vacías = fuera de la ventana solo se envía correo.
+WHATSAPP_PLANTILLA_RECORDATORIO = os.getenv("WHATSAPP_PLANTILLA_RECORDATORIO", "").strip()
+WHATSAPP_PLANTILLA_CONFIRMACION = os.getenv("WHATSAPP_PLANTILLA_CONFIRMACION", "").strip()
+WHATSAPP_PLANTILLA_IDIOMA = os.getenv("WHATSAPP_PLANTILLA_IDIOMA", "es").strip() or "es"
+
 # --- Requerimiento no funcional RNF-01: latencia máxima ---
 MAX_RESPONSE_LATENCY_SECONDS = 15
 

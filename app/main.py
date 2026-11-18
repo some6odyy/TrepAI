@@ -12,7 +12,7 @@ from fastapi.responses import RedirectResponse
 from app.db.database import Base, engine
 from app.core.config import CORS_ALLOWED_ORIGINS, BASE_DIR
 from app import models  # noqa: F401 — registra los modelos en Base antes de crear las tablas
-from app.routers import auth, negocio, contexto, webhook, agenda, conversaciones, puente
+from app.routers import auth, negocio, contexto, webhook, agenda, conversaciones, puente, tareas, publico, novedades
 
 app = FastAPI(
     title="TrepAI",
@@ -33,15 +33,37 @@ app.add_middleware(
 Base.metadata.create_all(bind=engine)
 
 
+# create_all NO agrega columnas a tablas que ya existen (ej. la BD de Neon en
+# producción). Aquí se añaden las columnas nuevas si faltan.
+_COLUMNAS_NUEVAS = [
+    ("agenda", "fecha_creacion", "TIMESTAMP"),
+    ("agenda", "nombre_contacto", "VARCHAR(100)"),
+    ("agenda", "correo_contacto", "VARCHAR(100)"),
+    ("agenda", "telefono_contacto", "VARCHAR(20)"),
+    ("agenda", "aviso_reserva_enviado", "TIMESTAMP"),
+    ("agenda", "recordatorio_24h_enviado", "TIMESTAMP"),
+    ("agenda", "confirmacion_1h_enviada", "TIMESTAMP"),
+    ("agenda", "respuesta_cliente", "VARCHAR(10)"),
+    ("cliente", "correo", "VARCHAR(100)"),
+]
+
+
 def _asegurar_columnas_nuevas():
-    """create_all NO agrega columnas a tablas que ya existen (ej. la BD de
-    Neon en producción). Esto añade agenda.fecha_creacion si falta; las citas
-    antiguas quedan con la fecha de hoy, así que no vencen de golpe."""
-    columnas = {c["name"] for c in inspect(engine).get_columns("agenda")}
-    if "fecha_creacion" not in columnas:
+    """Las citas antiguas quedan con fecha_creacion = ahora, así no vencen
+    de golpe. A las citas que ya existían no se les manda el aviso "al
+    agendar" (ya fueron agendadas antes); sí reciben los recordatorios de
+    24 h y 1 h si todavía están por venir."""
+    inspector = inspect(engine)
+    for tabla, columna, tipo in _COLUMNAS_NUEVAS:
+        existentes = {c["name"] for c in inspector.get_columns(tabla)}
+        if columna in existentes:
+            continue
         with engine.begin() as conexion:
-            conexion.execute(text("ALTER TABLE agenda ADD COLUMN fecha_creacion TIMESTAMP"))
-            conexion.execute(text("UPDATE agenda SET fecha_creacion = CURRENT_TIMESTAMP"))
+            conexion.execute(text(f"ALTER TABLE {tabla} ADD COLUMN {columna} {tipo}"))
+            if (tabla, columna) == ("agenda", "fecha_creacion"):
+                conexion.execute(text("UPDATE agenda SET fecha_creacion = CURRENT_TIMESTAMP"))
+            if (tabla, columna) == ("agenda", "aviso_reserva_enviado"):
+                conexion.execute(text("UPDATE agenda SET aviso_reserva_enviado = CURRENT_TIMESTAMP"))
 
 
 _asegurar_columnas_nuevas()
@@ -52,6 +74,9 @@ app.include_router(contexto.router)
 app.include_router(agenda.router)
 app.include_router(conversaciones.router)
 app.include_router(webhook.router)
+app.include_router(novedades.router)
+app.include_router(tareas.router)
+app.include_router(publico.router)
 app.include_router(puente.router)  # demo con whatsapp-web.js (desactivado sin PUENTE_TOKEN)
 
 

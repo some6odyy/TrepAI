@@ -199,11 +199,26 @@
       <div class="topbar">
         <div class="topbar-crumb" id="topbarNegocio">—</div>
         <div class="topbar-right">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
-            stroke-linejoin="round">
-            <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
-            <path d="M13.7 21a2 2 0 0 1-3.4 0" />
-          </svg>
+          <span class="live-dot" id="liveDot" title="Actualización en vivo"><span></span>En vivo</span>
+          <div class="avisos-wrap">
+            <button class="avisos-btn" id="btnAvisos" title="Avisos" aria-haspopup="true" aria-expanded="false">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+                stroke-linejoin="round">
+                <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
+                <path d="M13.7 21a2 2 0 0 1-3.4 0" />
+              </svg>
+              <span class="avisos-count hidden" id="avisosCount">0</span>
+            </button>
+            <div class="avisos-panel" id="avisosPanel" role="menu">
+              <div class="avisos-head">
+                <b>Avisos</b>
+                <button class="btn btn-ghost btn-sm" id="btnLeerAvisos">Marcar leídos</button>
+              </div>
+              <div id="avisosLista" class="avisos-lista">
+                <div class="avisos-vacio">Sin avisos nuevos.</div>
+              </div>
+            </div>
+          </div>
           <span class="topbar-admin-tag">Administrador</span>
         </div>
       </div>
@@ -619,7 +634,7 @@
             <div>
               <div class="eyebrow">Agenda</div>
               <h1>Próximas citas</h1>
-              <p class="text-muted">Citas agendadas por el bot o manualmente.</p>
+              <p class="text-muted">Citas agendadas por el bot o manualmente. Se actualiza sola.</p>
             </div>
             <button class="btn btn-primary" id="btnNuevaCita"><svg class="i">
                 <use href="#i-plus" />
@@ -653,7 +668,7 @@
             <div>
               <div class="eyebrow">Historial</div>
               <h1>Conversaciones</h1>
-              <p class="text-muted">Conversaciones entre el bot y tus clientes.</p>
+              <p class="text-muted">Conversaciones entre el bot y tus clientes. Puedes responderles directamente.</p>
             </div>
           </div>
 
@@ -687,6 +702,14 @@
                   <p>Elige una conversación para leerla.</p>
                 </div>
               </div>
+              <form class="chat-composer hidden" id="formResponder" autocomplete="off">
+                <textarea id="respuestaTexto" rows="1" maxlength="4000"
+                  placeholder="Escribe una respuesta para el cliente…" required></textarea>
+                <button type="submit" class="btn btn-primary" id="btnEnviarRespuesta">Enviar</button>
+              </form>
+              <div class="chat-cerrado hidden" id="chatCerrado">
+                Pasaron más de 24 h desde el último mensaje del cliente: WhatsApp no permite responderle hasta que vuelva a escribir.
+              </div>
             </section>
           </div>
         </section>
@@ -707,12 +730,16 @@
       </header>
       <form id="formCita">
         <div class="field">
-          <label for="citaTelefono">Teléfono del cliente</label>
-          <input type="text" id="citaTelefono" required placeholder="+56912345678">
+          <label for="citaNombre">Nombre del cliente</label>
+          <input type="text" id="citaNombre" required minlength="2" maxlength="100" autocomplete="off">
         </div>
         <div class="field">
-          <label for="citaNombre">Nombre del cliente</label>
-          <input type="text" id="citaNombre">
+          <label for="citaCorreo">Correo electrónico</label>
+          <input type="email" id="citaCorreo" required maxlength="100" placeholder="cliente@correo.cl" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="citaTelefono">Teléfono (WhatsApp para recordatorios)</label>
+          <input type="tel" id="citaTelefono" required placeholder="+56912345678" autocomplete="off">
         </div>
         <div class="field">
           <label for="citaServicio">Servicio</label>
@@ -728,6 +755,8 @@
             <input type="time" id="citaHora" required>
           </div>
         </div>
+        <p class="text-muted form-hint" id="citaHint">Se agenda con al menos 2 horas de anticipación. El cliente recibirá
+          un aviso al agendar, un recordatorio el día antes y un mensaje para confirmar 1 hora antes.</p>
         <button type="submit" class="btn btn-primary btn-block">Agendar cita</button>
       </form>
     </aside>

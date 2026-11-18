@@ -10,6 +10,13 @@ const estado = {
   filtroEstadoCita: '',
   conversaciones: [],
   conversacionActiva: null,
+  // Actualización en vivo
+  firmaAgenda: null,
+  firmaConversaciones: null,
+  avisos: [],
+  ultimoAvisoVisto: 0,
+  idsCitasConocidas: new Set(),
+  mensajesActivos: 0,
 };
 
 /* ---------------------------- Utilidades UI ---------------------------- */
@@ -31,15 +38,22 @@ function formatoCLP(valor) {
   return new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 }).format(valor);
 }
 
+// El backend guarda las fechas técnicas en UTC sin zona ("2026-11-18T17:46:59");
+// sin la "Z" el navegador las leería como hora local y mostraría 3 h de diferencia.
+function fechaUTC(iso) {
+  if (!iso) return new Date(NaN);
+  return new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(iso) ? iso : `${iso}Z`);
+}
+
 function formatoFechaHora(iso) {
-  return new Date(iso).toLocaleString('es-CL', { dateStyle: 'short', timeStyle: 'short' });
+  return fechaUTC(iso).toLocaleString('es-CL', { dateStyle: 'short', timeStyle: 'short' });
 }
 
 const $ = (id) => document.getElementById(id);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
 function formatoHora(iso) {
-  return new Date(iso).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' });
+  return fechaUTC(iso).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' });
 }
 
 function fechaLocalISO(d = new Date()) {
@@ -194,6 +208,7 @@ document.getElementById('formRegistro').addEventListener('submit', async (e) => 
 });
 
 document.getElementById('btnLogout').addEventListener('click', () => {
+  detenerEnVivo();
   Auth.clearToken();
   estado.administrador = null;
   estado.negocio = null;
@@ -219,6 +234,7 @@ async function iniciarSesionExitosa() {
   await refrescarEstadoWhatsapp();
   cargarEstadisticasResumen();
   mostrarPantallaDashboard();
+  iniciarEnVivo();
 }
 
 async function cargarEstadisticasResumen() {
@@ -663,6 +679,15 @@ document.getElementById('formServicio').addEventListener('submit', (e) => {
 
 const ESTADOS_CITA = ['pendiente', 'confirmada', 'completada', 'cancelada', 'expirada'];
 
+function badgesNotificacion(c) {
+  const b = [];
+  if (c.respuesta_cliente === 'si') b.push('<span class="notif ok">Cliente confirmó</span>');
+  else if (c.respuesta_cliente === 'no') b.push('<span class="notif no">Cliente canceló</span>');
+  else if (c.confirmacion_1h_enviada) b.push('<span class="notif">Esperando confirmación</span>');
+  else if (c.recordatorio_24h_enviado && ['pendiente', 'confirmada'].includes(c.estado_cita)) b.push('<span class="notif">Recordatorio enviado</span>');
+  return b.length ? `<span class="cita-notif">${b.join('')}</span>` : '';
+}
+
 async function cargarAgenda() {
   if (estado.servicios.length === 0) {
     try { await cargarContexto(); } catch (_) { }
@@ -700,6 +725,12 @@ function renderizarAgenda() {
     return;
   }
 
+  // Las citas que aparecen por primera vez (ej. agendadas por el bot) se resaltan
+  const citasNuevas = new Set(
+    estado.idsCitasConocidas.size ? citas.map((c) => c.id_agenda).filter((id) => !estado.idsCitasConocidas.has(id)) : []
+  );
+  estado.citas.forEach((c) => estado.idsCitasConocidas.add(c.id_agenda));
+
   const grupos = citas.reduce((acc, c) => ((acc[c.fecha_cita] ||= []).push(c), acc), {});
   const hoy = fechaLocalISO();
 
@@ -714,11 +745,12 @@ function renderizarAgenda() {
         </div>
         <div class="day-items">
           ${lista.map((c) => `
-            <article class="cita st-${c.estado_cita} ${c.estado_cita}">
+            <article class="cita st-${c.estado_cita} ${c.estado_cita} ${citasNuevas.has(c.id_agenda) ? 'flash' : ''}">
               <div class="cita-hora">${c.hora_cita.slice(0, 5)}</div>
               <div class="cita-who">
                 <b>${escapeHtml(c.nombre_cliente || c.telefono_cliente)}</b>
-                <small>${escapeHtml(c.nombre_servicio)}${c.nombre_cliente ? ` · <span class="mono">${escapeHtml(c.telefono_cliente)}</span>` : ''}</small>
+                <small>${escapeHtml(c.nombre_servicio)} · <span class="mono">${escapeHtml(c.telefono_contacto || c.telefono_cliente)}</span>${c.correo_cliente ? ` · ${escapeHtml(c.correo_cliente)}` : ''}</small>
+                ${badgesNotificacion(c)}
               </div>
               <select class="status-select st-${c.estado_cita}" data-cambiar-estado="${c.id_agenda}" aria-label="Estado de la cita">
                 ${ESTADOS_CITA.map((e) => `<option value="${e}" ${e === c.estado_cita ? 'selected' : ''}>${e}</option>`).join('')}
@@ -772,7 +804,7 @@ $('btnLimpiarFecha').addEventListener('click', () => { $('filtroFecha').value = 
 function abrirDrawer() {
   $('drawerCita').classList.add('open');
   if (!$('citaFecha').value) $('citaFecha').value = $('filtroFecha').value || fechaLocalISO();
-  setTimeout(() => $('citaTelefono').focus(), 200);
+  setTimeout(() => $('citaNombre').focus(), 200);
 }
 
 function cerrarDrawer() { $('drawerCita').classList.remove('open'); }
@@ -784,10 +816,17 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape') cerrarDraw
 
 $('formCita').addEventListener('submit', (e) => {
   e.preventDefault();
+  // Misma regla que el backend: al menos 2 horas de anticipación
+  const inicio = new Date(`${$('citaFecha').value}T${$('citaHora').value}`);
+  if (inicio.getTime() < Date.now() + 2 * 60 * 60 * 1000) {
+    mostrarToast('Las citas se agendan con al menos 2 horas de anticipación', 'error');
+    return;
+  }
   manejarEnvio(e.target, async () => {
     await api.crearCita(estado.negocio.id_negocio, {
-      telefono_cliente: $('citaTelefono').value,
-      nombre_cliente: $('citaNombre').value || null,
+      telefono_cliente: $('citaTelefono').value.trim(),
+      nombre_cliente: $('citaNombre').value.trim(),
+      correo_cliente: $('citaCorreo').value.trim(),
       id_servicio: Number($('citaServicio').value),
       fecha_cita: $('citaFecha').value,
       hora_cita: $('citaHora').value,
@@ -830,7 +869,7 @@ function renderizarConversaciones() {
       <button class="conv ${estado.conversacionActiva === c.id_conversacion ? 'active' : ''}" data-ver-conversacion="${c.id_conversacion}">
         <span class="avatar avatar-sm">${escapeHtml(iniciales(c.nombre_cliente))}</span>
         <span class="conv-body">
-          <span class="conv-top"><b>${escapeHtml(c.nombre_cliente || '(sin nombre)')}</b><time>${formatoFechaHora(c.fecha_inicio)}</time></span>
+          <span class="conv-top"><b>${escapeHtml(c.nombre_cliente || '(sin nombre)')}</b><time>${formatoFechaHora(c.ultima_actividad || c.fecha_inicio)}</time></span>
           <span class="conv-bottom">
             <small>${escapeHtml(c.telefono_cliente)}</small>
             <span style="display:flex;gap:6px;align-items:center">
@@ -852,36 +891,192 @@ function renderizarConversaciones() {
 
 $('buscarConversacion').addEventListener('input', renderizarConversaciones);
 
-async function abrirMensajes(conv) {
+const ETIQUETA_EMISOR = { bot: 'bot', negocio: 'negocio', cliente: 'cliente' };
+
+async function abrirMensajes(conv, { silencioso = false } = {}) {
   try {
     const mensajes = await api.listarMensajes(estado.negocio.id_negocio, conv.id_conversacion);
+    // Si es un refresco en vivo y no llegó nada nuevo, no se toca el DOM
+    if (silencioso && estado.conversacionActiva === conv.id_conversacion && mensajes.length === estado.mensajesActivos) {
+      actualizarComposer(conv);
+      return;
+    }
+    const hilo = $('chatThread');
+    const estabaAbajo = hilo.scrollHeight - hilo.scrollTop - hilo.clientHeight < 80;
+    const cambioDeConversacion = estado.conversacionActiva !== conv.id_conversacion;
+    const previos = cambioDeConversacion ? 0 : estado.mensajesActivos;
+
     estado.conversacionActiva = conv.id_conversacion;
+    estado.mensajesActivos = mensajes.length;
     const nombre = conv.nombre_cliente || conv.telefono_cliente;
     $('mensajesTitulo').textContent = `Conversación con ${nombre}`;
-    $('chatSub').textContent = `${conv.telefono_cliente} · ${conv.total_mensajes} mensajes`;
+    $('chatSub').textContent = `${conv.telefono_cliente} · ${mensajes.length} mensajes`;
     $('chatAvatar').textContent = iniciales(conv.nombre_cliente);
 
     let diaAnterior = '';
-    $('chatThread').innerHTML = mensajes.length === 0
+    hilo.innerHTML = mensajes.length === 0
       ? `<div class="chat-empty">${icono('chat')}<p>Esta conversación no tiene mensajes.</p></div>`
       : mensajes.map((m, i) => {
-        const dia = new Date(m.fecha_hora).toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' });
+        const dia = fechaUTC(m.fecha_hora).toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' });
         const separador = dia !== diaAnterior ? `<div class="chat-day">${capitalizar(dia)}</div>` : '';
         diaAnterior = dia;
+        // Solo se animan los mensajes que recién llegan
+        const anim = i >= previos ? `animation-delay:${Math.min(i - previos, 12) * 25}ms` : 'animation:none';
         return `${separador}
-          <div class="bubble ${m.emisor === 'bot' ? 'bot' : 'cliente'}" style="animation-delay:${Math.min(i, 12) * 25}ms">${escapeHtml(m.contenido)}<time>${formatoHora(m.fecha_hora)}</time></div>`;
+          <div class="bubble ${ETIQUETA_EMISOR[m.emisor] || 'cliente'}" style="${anim}">${escapeHtml(m.contenido)}<time>${formatoHora(m.fecha_hora)}</time></div>`;
       }).join('');
 
+    actualizarComposer(conv);
     $('inbox').classList.add('reading');
-    renderizarConversaciones();
-    const hilo = $('chatThread');
-    hilo.scrollTop = hilo.scrollHeight;
+    if (!silencioso) renderizarConversaciones();
+    if (!silencioso || estabaAbajo || cambioDeConversacion) hilo.scrollTop = hilo.scrollHeight;
   } catch (error) {
-    mostrarToast(error.message, 'error');
+    if (!silencioso) mostrarToast(error.message, 'error');
   }
 }
 
+function actualizarComposer(conv) {
+  const puede = Boolean(conv && conv.puede_responder);
+  $('formResponder').classList.toggle('hidden', !conv || !puede);
+  $('chatCerrado').classList.toggle('hidden', !conv || puede);
+}
+
+$('formResponder').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const texto = $('respuestaTexto').value.trim();
+  if (!texto || !estado.conversacionActiva) return;
+  manejarEnvio(e.target, async () => {
+    await api.responderConversacion(estado.negocio.id_negocio, estado.conversacionActiva, texto);
+    $('respuestaTexto').value = '';
+    $('respuestaTexto').style.height = '';
+    await cargarConversaciones();
+    const conv = estado.conversaciones.find((c) => c.id_conversacion === estado.conversacionActiva);
+    if (conv) await abrirMensajes(conv, { silencioso: true });
+    $('chatThread').scrollTop = $('chatThread').scrollHeight;
+  });
+});
+
+// Enter envía, Shift+Enter hace salto de línea; el cuadro crece con el texto
+$('respuestaTexto').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    $('formResponder').requestSubmit();
+  }
+});
+$('respuestaTexto').addEventListener('input', (e) => {
+  e.target.style.height = 'auto';
+  e.target.style.height = `${Math.min(e.target.scrollHeight, 140)}px`;
+});
+
 $('btnCerrarMensajes').addEventListener('click', () => $('inbox').classList.remove('reading'));
+
+/* ------------------------- Actualización en vivo --------------------------- */
+
+const INTERVALO_EN_VIVO_MS = 7000;
+let temporizadorEnVivo = null;
+let consultandoNovedades = false;
+
+function vistaActiva() {
+  return document.querySelector('.view.active')?.id || '';
+}
+
+async function revisarNovedades() {
+  if (!estado.negocio || consultandoNovedades || document.hidden) return;
+  consultandoNovedades = true;
+  try {
+    const n = await api.novedades(estado.negocio.id_negocio);
+    $('liveDot').classList.remove('off');
+
+    if (estado.firmaAgenda !== null && n.firma_agenda !== estado.firmaAgenda) {
+      if (vistaActiva() === 'viewAgenda') await cargarAgendaSilenciosa();
+      cargarEstadisticasResumen();
+    }
+    if (estado.firmaConversaciones !== null && n.firma_conversaciones !== estado.firmaConversaciones) {
+      if (vistaActiva() === 'viewHistorial') {
+        await cargarConversaciones();
+        const conv = estado.conversaciones.find((c) => c.id_conversacion === estado.conversacionActiva);
+        if (conv) await abrirMensajes(conv, { silencioso: true });
+      }
+      cargarEstadisticasResumen();
+    }
+    estado.firmaAgenda = n.firma_agenda;
+    estado.firmaConversaciones = n.firma_conversaciones;
+    actualizarAvisos(n.avisos);
+  } catch (error) {
+    $('liveDot').classList.add('off');
+    console.warn('Sin conexión para actualizar en vivo:', error.message);
+  } finally {
+    consultandoNovedades = false;
+  }
+}
+
+async function cargarAgendaSilenciosa() {
+  try {
+    const fecha = $('filtroFecha').value;
+    estado.citas = await api.listarCitas(estado.negocio.id_negocio, fecha || null);
+    // No re-renderizar si el usuario está cambiando un estado en este momento
+    if (document.activeElement?.matches?.('[data-cambiar-estado]')) return;
+    renderizarAgenda();
+  } catch (_) { /* se reintenta en la próxima vuelta */ }
+}
+
+function actualizarAvisos(avisos) {
+  estado.avisos = avisos || [];
+  const total = estado.avisos.length;
+  $('avisosCount').textContent = total > 9 ? '9+' : String(total);
+  $('avisosCount').classList.toggle('hidden', total === 0);
+
+  // Los avisos nuevos (desde la última consulta) también salen como toast
+  const nuevos = estado.avisos.filter((a) => a.id_aviso > estado.ultimoAvisoVisto);
+  if (estado.ultimoAvisoVisto > 0) nuevos.slice(0, 2).reverse().forEach((a) => mostrarToast(a.texto));
+  if (total) estado.ultimoAvisoVisto = Math.max(estado.ultimoAvisoVisto, ...estado.avisos.map((a) => a.id_aviso));
+  else if (estado.ultimoAvisoVisto === 0) estado.ultimoAvisoVisto = 1;
+
+  $('avisosLista').innerHTML = total === 0
+    ? '<div class="avisos-vacio">Sin avisos nuevos.</div>'
+    : estado.avisos.map((a) => `
+        <div class="aviso ${escapeHtml(a.tipo)}">
+          <span class="aviso-icono"></span>
+          <div>${escapeHtml(a.texto)}<time>${formatoFechaHora(a.fecha)}</time></div>
+        </div>`).join('');
+}
+
+function iniciarEnVivo() {
+  detenerEnVivo();
+  estado.firmaAgenda = null;
+  estado.firmaConversaciones = null;
+  estado.ultimoAvisoVisto = 0;
+  revisarNovedades();
+  temporizadorEnVivo = setInterval(revisarNovedades, INTERVALO_EN_VIVO_MS);
+}
+
+function detenerEnVivo() {
+  if (temporizadorEnVivo) clearInterval(temporizadorEnVivo);
+  temporizadorEnVivo = null;
+}
+
+// Al volver a la pestaña, se actualiza de inmediato
+document.addEventListener('visibilitychange', () => { if (!document.hidden) revisarNovedades(); });
+
+$('btnAvisos').addEventListener('click', (e) => {
+  e.stopPropagation();
+  const abierto = $('avisosPanel').classList.toggle('open');
+  $('btnAvisos').setAttribute('aria-expanded', String(abierto));
+});
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.avisos-wrap')) {
+    $('avisosPanel').classList.remove('open');
+    $('btnAvisos').setAttribute('aria-expanded', 'false');
+  }
+});
+$('btnLeerAvisos').addEventListener('click', async () => {
+  try {
+    await api.leerAvisos(estado.negocio.id_negocio);
+    actualizarAvisos([]);
+  } catch (error) {
+    mostrarToast(error.message, 'error');
+  }
+});
 
 /* -------------------------------- Helpers ---------------------------------- */
 

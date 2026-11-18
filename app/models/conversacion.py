@@ -29,7 +29,7 @@ class Mensaje(Base):
 
     id_mensaje = Column(Integer, primary_key=True, index=True)
     id_conversacion = Column(Integer, ForeignKey("conversacion.id_conversacion"), nullable=False)
-    emisor = Column(String(20), nullable=False)  # "cliente" | "bot"
+    emisor = Column(String(20), nullable=False)  # "cliente" | "bot" | "negocio" (respuesta manual del Dashboard)
     contenido = Column(Text, nullable=False)
     fecha_hora = Column(DateTime, server_default=func.now())
     tipo_mensaje = Column(String(20), default="texto")

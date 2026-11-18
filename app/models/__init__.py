@@ -5,6 +5,7 @@ from app.models.cliente import Cliente
 from app.models.conversacion import Conversacion, Mensaje
 from app.models.contexto_ia import ContextoIA
 from app.models.agenda import Agenda
+from app.models.aviso import Aviso
 
 __all__ = [
     "Administrador",
@@ -15,4 +16,5 @@ __all__ = [
     "Mensaje",
     "ContextoIA",
     "Agenda",
+    "Aviso",
 ]

@@ -1,5 +1,5 @@
 """Schemas de entrada/salida para la agenda de citas."""
-from datetime import date, time
+from datetime import date, datetime, time
 from typing import Literal
 from pydantic import BaseModel, Field
 
@@ -7,8 +7,11 @@ EstadoCita = Literal["pendiente", "confirmada", "cancelada", "completada", "expi
 
 
 class CitaCreate(BaseModel):
+    """Nombre, correo y teléfono son obligatorios: a ellos se envían los
+    recordatorios y la confirmación de la cita."""
     telefono_cliente: str = Field(min_length=8, max_length=20)
-    nombre_cliente: str | None = Field(default=None, max_length=100)
+    nombre_cliente: str = Field(min_length=2, max_length=100)
+    correo_cliente: str = Field(min_length=5, max_length=100)
     id_servicio: int
     fecha_cita: date
     hora_cita: time
@@ -28,3 +31,9 @@ class CitaResponse(BaseModel):
     fecha_cita: date
     hora_cita: time
     estado_cita: str
+    correo_cliente: str | None = None
+    telefono_contacto: str | None = None
+    # Seguimiento de notificaciones para mostrar en la Agenda
+    recordatorio_24h_enviado: datetime | None = None
+    confirmacion_1h_enviada: datetime | None = None
+    respuesta_cliente: str | None = None

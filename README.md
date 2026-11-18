@@ -80,6 +80,15 @@ Con el backend corriendo en otra terminal:
 python tests/smoke_test.py
 ```
 
+Pruebas sin servidor (usan una BD SQLite temporal):
+
+```bash
+PYTHONPATH=. python tests/test_agenda_bloqueo.py
+PYTHONPATH=. python tests/test_agendado_ia.py
+PYTHONPATH=. python tests/test_horario.py
+PYTHONPATH=. python tests/test_recordatorios.py
+```
+
 Recorre el journey completo con datos realistas de Silvabarber: registro,
 negocio, catálogo, contexto, conexión WhatsApp, bot encendido, mensaje
 entrante simulado, verificación del historial, agenda, aislamiento
@@ -104,6 +113,67 @@ python -m scripts.limpiar_bd
 ```
 
 Sin `DATABASE_URL` usa la del `.env` (o el SQLite local).
+
+## Agenda: recordatorios, confirmaciones y respuestas
+
+Reglas para **todos** los negocios (manual desde el Dashboard o por el bot):
+
+- **Anticipación mínima de 2 horas** (`ANTICIPACION_MINIMA_HORAS` en
+  `services/agenda_service.py`). El bot sugiere horas libres desde ese mínimo.
+- **Datos obligatorios para agendar**: nombre, correo y teléfono. Se guardan
+  en la cita (`nombre_contacto`, `correo_contacto`, `telefono_contacto`) y
+  ahí se envían los recordatorios. El bot los pide antes de reservar.
+
+Notificaciones al cliente (`services/recordatorios.py`):
+
+| Cuándo | Qué | Canal |
+|---|---|---|
+| Al agendar / reagendar | Resumen de la cita | WhatsApp + correo |
+| 24 h antes | Recordatorio (se omite si se agendó con menos de 24 h) | WhatsApp + correo |
+| 1 h antes | "¿Confirmas? Responde SÍ o NO" + aviso al negocio | WhatsApp + correo con enlaces Confirmo / No podré ir |
+
+- **SÍ** → la cita pasa a *confirmada*. **NO** → *cancelada* y el horario
+  queda libre. **Sin respuesta** → la cita se mantiene (el negocio ya vio el
+  aviso). La respuesta funciona aunque el bot esté pausado.
+- **Ventana de 24 h de Meta:** WhatsApp solo deja mandar texto libre si el
+  cliente escribió en las últimas 24 h. Fuera de esa ventana se usa una
+  **plantilla aprobada** (si está configurada); si no, solo llega el correo.
+
+### Plantillas de WhatsApp (opcional, recomendado)
+
+Crearlas en el WABA maestro (Meta Business Manager → WhatsApp Manager →
+Plantillas), categoría **Utilidad**, idioma **Español (es)**:
+
+- `trepai_recordatorio` — *Hola {{1}}, te recordamos tu hora de {{2}} en {{3}} el {{4}}.*
+- `trepai_confirmacion` — *Hola {{1}}, tu hora de {{2}} en {{3}} es hoy a las {{4}}. ¿Confirmas tu asistencia? Responde SÍ o NO.*
+
+Y en Vercel: `WHATSAPP_PLANTILLA_RECORDATORIO=trepai_recordatorio`,
+`WHATSAPP_PLANTILLA_CONFIRMACION=trepai_confirmacion`.
+
+### Cron cada 5 minutos
+
+Vercel Hobby solo permite crons diarios, así que los recordatorios los
+dispara GitHub Actions (`.github/workflows/recordatorios.yml`):
+
+1. En Vercel define `CRON_SECRET` (un texto largo aleatorio), `APP_URL` y
+   las variables `SMTP_*`.
+2. En GitHub → Settings → Secrets and variables → Actions crea
+   `TREPAI_URL` (ej. `https://trepai.vercel.app`) y `CRON_SECRET` (el mismo).
+
+Como respaldo, los recordatorios también se ejecutan "de pasada" (máx. 1 vez
+por minuto por negocio) cuando llega un mensaje por WhatsApp o cuando el
+Dashboard está abierto.
+
+## Dashboard en vivo y respuestas manuales
+
+- **Conversaciones:** el administrador puede responder al cliente desde el
+  Dashboard (`POST /negocio/{id}/conversaciones/{id}/mensajes`). Se envía por
+  WhatsApp con el número del negocio y queda en el historial como "Tú".
+  Solo se permite dentro de la ventana de 24 h de Meta. Con el bot pausado,
+  los mensajes entrantes igual quedan guardados para responderlos a mano.
+- **En vivo:** el Dashboard consulta `GET /negocio/{id}/novedades` cada 7 s y
+  recarga Agenda o Conversaciones solo si cambiaron. Los avisos (nueva cita,
+  cita en 1 hora, cliente confirmó/canceló) aparecen en la campana.
 
 ## Mapeo requerimiento -> archivo
 

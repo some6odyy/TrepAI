@@ -72,10 +72,15 @@ def recibir_mensaje_puente(datos: MensajePuente, db: Session = Depends(get_db)):
     if negocio is None:
         return {"status": "negocio_no_encontrado", "respuesta": None}
 
-    # RF-04: si el administrador pausó el bot desde el Dashboard, no respondemos
-    if not negocio.estado_bot:
-        return {"status": "bot_inactivo", "respuesta": None}
-
     telefono = "".join(c for c in datos.telefono if c.isdigit())
-    respuesta = chat_service.procesar_mensaje(db, negocio, telefono, datos.mensaje.strip())
+    texto = datos.mensaje.strip()
+
+    # Respuesta SÍ/NO a la confirmación de 1 hora antes (sin IA)
+    respuesta = chat_service.procesar_respuesta_confirmacion(db, negocio, telefono, texto)
+    if respuesta is None:
+        # RF-04: si el administrador pausó el bot desde el Dashboard, no respondemos
+        if not negocio.estado_bot:
+            chat_service.guardar_mensaje_sin_respuesta(db, negocio, telefono, texto)
+            return {"status": "bot_inactivo", "respuesta": None}
+        respuesta = chat_service.procesar_mensaje(db, negocio, telefono, texto)
     return {"status": "procesado", "respuesta": respuesta}

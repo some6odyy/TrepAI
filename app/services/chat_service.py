@@ -16,7 +16,7 @@ from app.models.negocio import Negocio
 from app.models.contexto_ia import ContextoIA
 from app.models.servicio import Servicio
 from app.models.conversacion import Conversacion, Mensaje
-from app.services import ai_service, agendado_ia, agenda_service
+from app.services import ai_service, agendado_ia, agenda_service, recordatorios
 from app.services.cliente_service import obtener_o_crear_cliente
 
 
@@ -45,6 +45,40 @@ def obtener_o_crear_conversacion_abierta(db: Session, id_cliente: int, id_negoci
         db.commit()
         db.refresh(conversacion)
     return conversacion
+
+
+def procesar_respuesta_confirmacion(
+    db: Session, negocio: Negocio, telefono_cliente: str, texto_mensaje: str
+) -> str | None:
+    """Si a este número se le pidió confirmar su cita (mensaje de 1 hora
+    antes) y responde SÍ o NO, se aplica sin pasar por la IA. Funciona
+    aunque el bot esté pausado: es parte del flujo de la agenda.
+    Devuelve el texto de respuesta, o None si el mensaje no era eso."""
+    cita = recordatorios.cita_esperando_respuesta(db, negocio, telefono_cliente)
+    if cita is None:
+        return None
+    respuesta = recordatorios.interpretar_respuesta(texto_mensaje)
+    if respuesta is None:
+        return None
+
+    cliente = obtener_o_crear_cliente(db, telefono_cliente)
+    conversacion = obtener_o_crear_conversacion_abierta(db, cliente.id_cliente, negocio.id_negocio)
+    db.add(Mensaje(id_conversacion=conversacion.id_conversacion, emisor="cliente", contenido=texto_mensaje))
+    db.commit()
+
+    texto_respuesta = recordatorios.registrar_respuesta(db, negocio, cita, respuesta)
+    db.add(Mensaje(id_conversacion=conversacion.id_conversacion, emisor="bot", contenido=texto_respuesta))
+    db.commit()
+    return texto_respuesta
+
+
+def guardar_mensaje_sin_respuesta(db: Session, negocio: Negocio, telefono_cliente: str, texto_mensaje: str) -> None:
+    """Con el bot pausado, el mensaje igual queda en Conversaciones para que
+    el negocio pueda responderlo a mano desde el Dashboard."""
+    cliente = obtener_o_crear_cliente(db, telefono_cliente)
+    conversacion = obtener_o_crear_conversacion_abierta(db, cliente.id_cliente, negocio.id_negocio)
+    db.add(Mensaje(id_conversacion=conversacion.id_conversacion, emisor="cliente", contenido=texto_mensaje))
+    db.commit()
 
 
 def procesar_mensaje(db: Session, negocio: Negocio, telefono_cliente: str, texto_mensaje: str) -> str:
@@ -109,6 +143,11 @@ def procesar_mensaje(db: Session, negocio: Negocio, telefono_cliente: str, texto
         historial=historial,
         agendar_automatico=bool(contexto and contexto.agendar_automatico),
         cita_activa=cita_activa_txt,
+        datos_cliente={
+            "nombre": cliente.nombre_cliente,
+            "correo": cliente.correo,
+            "whatsapp": cliente.telefono,
+        },
         perfil_negocio={
             "nombre_negocio": negocio.nombre_negocio,
             "direccion": negocio.direccion,

@@ -9,18 +9,28 @@ from sqlalchemy.orm import Session
 from app.models.cliente import Cliente
 
 
-def obtener_o_crear_cliente(db: Session, telefono: str, nombre: str | None = None) -> Cliente:
+def obtener_o_crear_cliente(
+    db: Session, telefono: str, nombre: str | None = None, correo: str | None = None
+) -> Cliente:
     cliente = db.query(Cliente).filter(Cliente.telefono == telefono).first()
 
     if cliente is None:
-        cliente = Cliente(telefono=telefono, nombre_cliente=nombre)
+        cliente = Cliente(telefono=telefono, nombre_cliente=nombre, correo=correo)
         db.add(cliente)
         db.commit()
         db.refresh(cliente)
-    elif nombre and not cliente.nombre_cliente:
+        return cliente
+
+    cambios = False
+    if nombre and not cliente.nombre_cliente:
         # Si antes no teníamos su nombre y ahora sí, lo completamos.
         cliente.nombre_cliente = nombre
+        cambios = True
+    if correo and cliente.correo != correo:
+        # El último correo que el cliente dio al agendar es el vigente.
+        cliente.correo = correo
+        cambios = True
+    if cambios:
         db.commit()
         db.refresh(cliente)
-
     return cliente

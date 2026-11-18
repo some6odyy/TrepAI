@@ -10,6 +10,8 @@ import logging
 
 import requests
 
+from app.core.security import descifrar_texto
+
 logger = logging.getLogger("trepai.whatsapp")
 
 GRAPH_API_VERSION = "v19.0"
@@ -60,3 +62,24 @@ def enviar_mensaje(telefono_destino: str, texto: str, phone_number_id: str, toke
     except requests.RequestException as error:
         logger.error("Fallo al enviar mensaje de WhatsApp a %s: %s", telefono_destino, error)
         return False
+
+
+def token_del_negocio(negocio) -> str | None:
+    raw_token = (negocio.whatsapp_token or "").strip()
+    if not raw_token:
+        return None
+    return raw_token if raw_token.startswith("EAA") else descifrar_texto(raw_token)
+
+
+def enviar_respuesta_negocio(negocio, telefono_destino: str, texto: str) -> bool | None:
+    """Envía texto con el número del negocio. None si el negocio no tiene
+    WhatsApp conectado; True/False según si Meta lo aceptó."""
+    token = token_del_negocio(negocio)
+    if not token or not negocio.whatsapp_phone_number_id:
+        return None
+    return enviar_mensaje(
+        telefono_destino=telefono_destino,
+        texto=texto,
+        phone_number_id=negocio.whatsapp_phone_number_id,
+        token=token,
+    )

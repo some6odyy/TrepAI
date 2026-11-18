@@ -75,6 +75,47 @@ def enviar_whatsapp_cloud(negocio: Negocio, telefono: str, texto: str) -> bool:
         return False
 
 
+def enviar_plantilla_cloud(
+    negocio: Negocio, telefono: str, plantilla: str, idioma: str, parametros: list[str]
+) -> bool:
+    """Mensaje de plantilla aprobada por Meta: la única forma de escribirle
+    al cliente si no nos ha escrito en las últimas 24 h."""
+    phone_id, token = _obtener_credenciales_meta(negocio)
+    telefono_limpio = "".join(ch for ch in (telefono or "") if ch.isdigit())
+    if not phone_id or not token or not telefono_limpio or not plantilla:
+        return False
+
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": telefono_limpio,
+        "type": "template",
+        "template": {
+            "name": plantilla,
+            "language": {"code": idioma},
+            "components": [
+                {
+                    "type": "body",
+                    "parameters": [{"type": "text", "text": str(p)[:1000]} for p in parametros],
+                }
+            ],
+        },
+    }
+    try:
+        resp = requests.post(
+            f"https://graph.facebook.com/{GRAPH_API_VERSION}/{phone_id}/messages",
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            json=payload,
+            timeout=10,
+        )
+        if not resp.ok:
+            logger.warning("Meta rechazó la plantilla %s a %s (%s): %s", plantilla, telefono_limpio, resp.status_code, resp.text)
+            return False
+        return True
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Error de red enviando plantilla a %s: %s", telefono_limpio, exc)
+        return False
+
+
 def notificar_cita_confirmada(
     negocio: Negocio,
     cita: Agenda,

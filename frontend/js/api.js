@@ -89,4 +89,9 @@ const api = {
 
   listarConversaciones: (id) => apiFetch(`/negocio/${id}/conversaciones`),
   listarMensajes: (id, idConversacion) => apiFetch(`/negocio/${id}/conversaciones/${idConversacion}/mensajes`),
+  responderConversacion: (id, idConversacion, texto) =>
+    apiFetch(`/negocio/${id}/conversaciones/${idConversacion}/mensajes`, { method: 'POST', body: { texto } }),
+
+  novedades: (id) => apiFetch(`/negocio/${id}/novedades`),
+  leerAvisos: (id, ids = null) => apiFetch(`/negocio/${id}/avisos/leer`, { method: 'POST', body: { ids } }),
 };

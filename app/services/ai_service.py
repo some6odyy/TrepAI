@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 
 import requests
 
+from app.core.tiempo import ahora_chile  # noqa: F401 — se reexporta (agendado_ia/chat_service lo usan)
 from app.core.config import AI_PROVIDER, AI_API_KEY, GEMINI_MODEL, OPENAI_MODEL, MAX_RESPONSE_LATENCY_SECONDS
 
 logger = logging.getLogger("trepai.ai_service")
@@ -22,17 +23,6 @@ RESPUESTA_DE_RESPALDO = (
 
 
 _DIAS = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
-
-
-def ahora_chile() -> datetime:
-    """Hora local de Chile para que el bot entienda "mañana", "el martes", etc.
-    En Windows zoneinfo puede no tener la base de zonas horarias (falta el
-    paquete tzdata); en ese caso usamos UTC-3 fijo."""
-    try:
-        from zoneinfo import ZoneInfo
-        return datetime.now(ZoneInfo("America/Santiago"))
-    except Exception:
-        return datetime.now(timezone(timedelta(hours=-3)))
 
 
 def _formatear_precio(precio) -> str:
@@ -53,6 +43,7 @@ def armar_prompt(
     perfil_negocio: dict | None = None,
     agendar_automatico: bool = False,
     cita_activa: str | None = None,
+    datos_cliente: dict | None = None,
 ) -> str:
     """Combina el contexto configurado por el administrador (RF-03) con el
     mensaje entrante del cliente final.
@@ -90,9 +81,18 @@ def armar_prompt(
         instruccion_agenda = instrucciones_para_prompt()
     else:
         instruccion_agenda = (
-            "Si el cliente quiere agendar, pide el servicio, el día y la hora, y dile que "
-            "un miembro del equipo confirmará la disponibilidad."
+            "Si el cliente quiere agendar, pide el servicio, el día y la hora (con al menos 2 horas "
+            "de anticipación), además de su nombre completo, correo electrónico y un teléfono para "
+            "enviarle recordatorios y la confirmación; luego dile que un miembro del equipo "
+            "confirmará la disponibilidad."
         )
+
+    dc = datos_cliente or {}
+    datos_cliente_texto = (
+        f"nombre: {dc.get('nombre') or '(no lo sabemos)'}; "
+        f"correo: {dc.get('correo') or '(no lo sabemos)'}; "
+        f"WhatsApp desde el que escribe: {dc.get('whatsapp') or '-'}"
+    )
 
     ahora = ahora_chile()
     fecha_actual = f"{_DIAS[ahora.weekday()]} {ahora.strftime('%d-%m-%Y %H:%M')}"
@@ -122,6 +122,7 @@ def armar_prompt(
         f"Instrucciones del administrador:\n{instrucciones or '(sin instrucciones adicionales)'}\n\n"
         f"Catálogo de servicios:\n{catalogo_texto}\n\n"
         f"Cita activa actual del cliente: {cita_activa or 'ninguna'}\n\n"
+        f"Datos guardados del cliente: {datos_cliente_texto}\n\n"
         f"Conversación hasta ahora:\n{historial_texto}\n\n"
         f"Nuevo mensaje del cliente:\n{mensaje_cliente}"
         
