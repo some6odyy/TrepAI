@@ -52,6 +52,16 @@ function formatoFechaHora(iso) {
 const $ = (id) => document.getElementById(id);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
+// Hoy -> "15:47"; ayer -> "Ayer"; otro día -> "17-11"
+function formatoCorto(iso) {
+  const d = fechaUTC(iso);
+  const hoy = new Date();
+  if (d.toDateString() === hoy.toDateString()) return d.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', hour12: false });
+  const ayer = new Date(hoy); ayer.setDate(hoy.getDate() - 1);
+  if (d.toDateString() === ayer.toDateString()) return 'Ayer';
+  return d.toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit' });
+}
+
 function formatoHora(iso) {
   return fechaUTC(iso).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' });
 }
@@ -59,6 +69,18 @@ function formatoHora(iso) {
 function fechaLocalISO(d = new Date()) {
   const z = (n) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}`;
+}
+
+// "56988335580" -> "+56 9 8833 5580" (otros países: "+" y los dígitos)
+function formatoTelefono(tel) {
+  const d = String(tel || '').replace(/\D/g, '');
+  if (d.length === 11 && d.startsWith('569')) return `+56 9 ${d.slice(3, 7)} ${d.slice(7)}`;
+  return d ? `+${d}` : '';
+}
+
+// Nombre para mostrar: el del cliente o, si aún no lo sabemos, su número
+function nombreVisible(c) {
+  return c.nombre_cliente || formatoTelefono(c.telefono_cliente);
 }
 
 function iniciales(texto) {
@@ -869,9 +891,9 @@ function renderizarConversaciones() {
       <button class="conv ${estado.conversacionActiva === c.id_conversacion ? 'active' : ''}" data-ver-conversacion="${c.id_conversacion}">
         <span class="avatar avatar-sm">${escapeHtml(iniciales(c.nombre_cliente))}</span>
         <span class="conv-body">
-          <span class="conv-top"><b>${escapeHtml(c.nombre_cliente || '(sin nombre)')}</b><time>${formatoFechaHora(c.ultima_actividad || c.fecha_inicio)}</time></span>
+          <span class="conv-top"><b class="${c.nombre_cliente ? '' : 'mono'}">${escapeHtml(nombreVisible(c))}</b><time title="${formatoFechaHora(c.ultima_actividad || c.fecha_inicio)}">${formatoCorto(c.ultima_actividad || c.fecha_inicio)}</time></span>
           <span class="conv-bottom">
-            <small>${escapeHtml(c.telefono_cliente)}</small>
+            <small>${c.nombre_cliente ? escapeHtml(formatoTelefono(c.telefono_cliente)) : 'Sin nombre aún'}</small>
             <span style="display:flex;gap:6px;align-items:center">
               <span class="pill ${c.estado === 'abierta' ? 'pill-success' : 'pill-muted'}">${escapeHtml(c.estado)}</span>
               <span class="count" title="Mensajes">${c.total_mensajes}</span>
@@ -908,9 +930,8 @@ async function abrirMensajes(conv, { silencioso = false } = {}) {
 
     estado.conversacionActiva = conv.id_conversacion;
     estado.mensajesActivos = mensajes.length;
-    const nombre = conv.nombre_cliente || conv.telefono_cliente;
-    $('mensajesTitulo').textContent = `Conversación con ${nombre}`;
-    $('chatSub').textContent = `${conv.telefono_cliente} · ${mensajes.length} mensajes`;
+    $('mensajesTitulo').textContent = `Conversación con ${nombreVisible(conv)}`;
+    $('chatSub').textContent = `${formatoTelefono(conv.telefono_cliente)} · ${mensajes.length} ${mensajes.length === 1 ? 'mensaje' : 'mensajes'}`;
     $('chatAvatar').textContent = iniciales(conv.nombre_cliente);
 
     let diaAnterior = '';

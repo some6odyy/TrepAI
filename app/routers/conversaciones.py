@@ -12,6 +12,8 @@ from app.core.deps import obtener_negocio_propio
 from app.models.negocio import Negocio
 from app.models.conversacion import Conversacion, Mensaje
 from app.models.cliente import Cliente
+from app.models.agenda import Agenda
+from app.models.servicio import Servicio
 from app.core.tiempo import ahora_utc
 from app.schemas.conversacion import ConversacionResponse, MensajeResponse, ResponderRequest
 from app.services import recordatorios, whatsapp_service
@@ -43,6 +45,18 @@ def listar_conversaciones(
         .group_by(Mensaje.id_conversacion)
         .all()
     )
+    # Respaldo para clientes sin nombre guardado (conversaciones antiguas):
+    # el nombre que dieron en su cita más reciente en este negocio.
+    nombres_cita = {}
+    for id_cliente, nombre in (
+        db.query(Agenda.id_cliente, Agenda.nombre_contacto)
+        .join(Servicio, Agenda.id_servicio == Servicio.id_servicio)
+        .filter(Servicio.id_negocio == negocio.id_negocio, Agenda.nombre_contacto.isnot(None))
+        .order_by(Agenda.id_agenda)
+        .all()
+    ):
+        nombres_cita[id_cliente] = nombre
+
     limite_ventana = ahora_utc() - timedelta(hours=recordatorios.VENTANA_META_HORAS)
     resultados.sort(key=lambda r: r[3] or r[0].fecha_inicio, reverse=True)
 
@@ -50,7 +64,7 @@ def listar_conversaciones(
         ConversacionResponse(
             id_conversacion=conversacion.id_conversacion,
             id_cliente=cliente.id_cliente,
-            nombre_cliente=cliente.nombre_cliente,
+            nombre_cliente=cliente.nombre_cliente or nombres_cita.get(cliente.id_cliente),
             telefono_cliente=cliente.telefono,
             fecha_inicio=conversacion.fecha_inicio,
             fecha_fin=conversacion.fecha_fin,

@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from app.db.database import get_db
 from app.core.config import WHATSAPP_VERIFY_TOKEN
 from app.models.negocio import Negocio
-from app.services import whatsapp_service, chat_service, recordatorios
+from app.services import whatsapp_service, chat_service, recordatorios, cliente_service
 
 router = APIRouter(prefix="/webhook", tags=["Webhook WhatsApp"])
 
@@ -50,6 +50,10 @@ async def recibir_mensaje(request: Request, db: Session = Depends(get_db)):
     negocio = db.query(Negocio).filter(Negocio.whatsapp_phone_number_id == phone_number_id).first()
     if negocio is None:
         return {"status": "negocio_no_encontrado"}
+
+    # Nombre del perfil de WhatsApp: se guarda si todavía no sabemos cómo se
+    # llama el cliente (el nombre que dé al agendar tiene prioridad).
+    cliente_service.obtener_o_crear_cliente(db, telefono_cliente, whatsapp_service.nombre_perfil(payload))
 
     # 3) Respuesta SÍ/NO al mensaje de confirmación de 1 hora antes: se
     #    aplica a la cita sin pasar por la IA (funciona aunque el bot esté pausado).

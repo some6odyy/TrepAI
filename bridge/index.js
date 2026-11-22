@@ -190,7 +190,7 @@ function registrarEventos(client) {
       paso = "llamar al backend";
       const datos = await llamarBackend("/puente/mensaje", {
         method: "POST",
-        body: JSON.stringify({ telefono: numero, mensaje: msg.body }),
+        body: JSON.stringify({ telefono: numero, mensaje: msg.body, nombre: msg._data?.notifyName || undefined }),
       });
 
       if (chat) await chat.clearState().catch(() => { });

@@ -23,6 +23,7 @@ from app.core.config import PUENTE_TOKEN, PUENTE_ID_NEGOCIO
 from app.db.database import get_db
 from app.models.negocio import Negocio
 from app.services import chat_service
+from app.services.cliente_service import obtener_o_crear_cliente
 
 router = APIRouter(prefix="/puente", tags=["Puente WhatsApp (demo)"])
 
@@ -30,6 +31,7 @@ router = APIRouter(prefix="/puente", tags=["Puente WhatsApp (demo)"])
 class MensajePuente(BaseModel):
     telefono: str = Field(min_length=5, description="Número del cliente, solo dígitos con código país (ej. 56912345678)")
     mensaje: str = Field(min_length=1, max_length=4000)
+    nombre: str | None = Field(default=None, max_length=100, description="Nombre de perfil de WhatsApp (opcional)")
 
 
 def _verificar_token(x_puente_token: str = Header(default="")):
@@ -74,6 +76,8 @@ def recibir_mensaje_puente(datos: MensajePuente, db: Session = Depends(get_db)):
 
     telefono = "".join(c for c in datos.telefono if c.isdigit())
     texto = datos.mensaje.strip()
+    if datos.nombre and datos.nombre.strip():
+        obtener_o_crear_cliente(db, telefono, " ".join(datos.nombre.split())[:100])
 
     # Respuesta SÍ/NO a la confirmación de 1 hora antes (sin IA)
     respuesta = chat_service.procesar_respuesta_confirmacion(db, negocio, telefono, texto)

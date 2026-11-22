@@ -10,8 +10,14 @@ from app.models.cliente import Cliente
 
 
 def obtener_o_crear_cliente(
-    db: Session, telefono: str, nombre: str | None = None, correo: str | None = None
+    db: Session,
+    telefono: str,
+    nombre: str | None = None,
+    correo: str | None = None,
+    reemplazar_nombre: bool = False,
 ) -> Cliente:
+    """reemplazar_nombre=True cuando el nombre lo dio el propio cliente o el
+    administrador al agendar (manda sobre el nombre de perfil de WhatsApp)."""
     cliente = db.query(Cliente).filter(Cliente.telefono == telefono).first()
 
     if cliente is None:
@@ -22,7 +28,7 @@ def obtener_o_crear_cliente(
         return cliente
 
     cambios = False
-    if nombre and not cliente.nombre_cliente:
+    if nombre and (not cliente.nombre_cliente or (reemplazar_nombre and cliente.nombre_cliente != nombre)):
         # Si antes no teníamos su nombre y ahora sí, lo completamos.
         cliente.nombre_cliente = nombre
         cambios = True

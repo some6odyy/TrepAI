@@ -37,6 +37,17 @@ def parsear_evento(payload: dict) -> tuple[str | None, str | None, str | None]:
         return None, None, None
 
 
+def nombre_perfil(payload: dict) -> str | None:
+    """Nombre de perfil de WhatsApp del cliente (value.contacts[0].profile.name).
+    Meta lo manda en cada mensaje entrante; puede faltar o venir vacío."""
+    try:
+        nombre = payload["entry"][0]["changes"][0]["value"]["contacts"][0]["profile"]["name"]
+    except (KeyError, IndexError, TypeError):
+        return None
+    nombre = " ".join(str(nombre or "").split())
+    return nombre[:100] or None
+
+
 def enviar_mensaje(telefono_destino: str, texto: str, phone_number_id: str, token: str) -> bool:
     """Despacha la respuesta de vuelta al cliente (RF-09).
 

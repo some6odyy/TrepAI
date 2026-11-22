@@ -84,7 +84,7 @@ def crear_cita(
     except DatosContactoError as error:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error))
 
-    cliente = obtener_o_crear_cliente(db, telefono, nombre, correo)
+    cliente = obtener_o_crear_cliente(db, telefono, nombre, correo, reemplazar_nombre=True)
 
     try:
         nueva_cita = agenda_service.crear_cita_validada(

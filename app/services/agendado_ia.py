@@ -333,8 +333,9 @@ def procesar_solicitud(
     # Guardamos nombre/correo en la ficha del cliente para la próxima reserva
     cliente = db.query(Cliente).filter(Cliente.id_cliente == id_cliente).first()
     if cliente is not None:
-        if not cliente.nombre_cliente and solicitud.nombre:
-            cliente.nombre_cliente = solicitud.nombre.strip()[:100]
+        if solicitud.nombre and solicitud.nombre.strip():
+            # El nombre que da al agendar manda sobre el de su perfil de WhatsApp
+            cliente.nombre_cliente = " ".join(solicitud.nombre.split())[:100]
         correo_ok = agenda_service.normalizar_correo(solicitud.correo)
         if correo_ok:
             cliente.correo = correo_ok
