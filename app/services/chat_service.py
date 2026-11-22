@@ -17,7 +17,7 @@ from app.models.contexto_ia import ContextoIA
 from app.models.servicio import Servicio
 from app.models.conversacion import Conversacion, Mensaje
 from app.models.aviso import Aviso
-from app.services import ai_service, agendado_ia, agenda_service, recordatorios, respuesta_sin_ia
+from app.services import ai_service, agendado_ia, agenda_service, recordatorios, reserva_sin_ia, respuesta_sin_ia
 from app.services.cliente_service import obtener_o_crear_cliente
 
 
@@ -80,6 +80,39 @@ def guardar_mensaje_sin_respuesta(db: Session, negocio: Negocio, telefono_client
     conversacion = obtener_o_crear_conversacion_abierta(db, cliente.id_cliente, negocio.id_negocio)
     db.add(Mensaje(id_conversacion=conversacion.id_conversacion, emisor="cliente", contenido=texto_mensaje))
     db.commit()
+
+
+def _agendar_sin_ia(db, negocio, cliente, contexto, catalogo, historial, texto_mensaje) -> str | None:
+    """Flujo de reserva sin IA (ver reserva_sin_ia.py). Devuelve None si el
+    mensaje no tiene que ver con agendar."""
+    if not catalogo:
+        return None
+    ahora = ai_service.ahora_chile()
+    hoy = ahora.date()
+    if not reserva_sin_ia.mensaje_aporta(texto_mensaje, catalogo, hoy):
+        return None
+    datos = reserva_sin_ia.reunir_datos(
+        reserva_sin_ia.mensajes_desde_ultima_reserva(historial, texto_mensaje), catalogo, hoy
+    )
+    if not (datos.fecha or datos.hora or (datos.servicio and (datos.correo or datos.telefono or datos.nombre))):
+        return None  # solo nombró un servicio: lo responde respuesta_sin_ia (precio y duración)
+    if datos.faltan:
+        return reserva_sin_ia.mensaje_faltantes(datos)
+    if not (contexto and contexto.agendar_automatico):
+        return (
+            f"Anoté *{datos.servicio.nombre_servicio}* para el {datos.fecha:%d-%m} a las {datos.hora:%H:%M} "
+            f"a nombre de {datos.nombre}. Alguien del equipo revisa la disponibilidad y te confirma a la brevedad. 🙌"
+        )
+    solicitud = agendado_ia.SolicitudCita(
+        accion="AGENDAR",
+        servicio=datos.servicio.nombre_servicio,
+        fecha=datos.fecha,
+        hora=datos.hora,
+        nombre=datos.nombre,
+        correo=datos.correo,
+        telefono=datos.telefono,
+    )
+    return agendado_ia.procesar_solicitud(db, negocio, cliente.id_cliente, solicitud, ahora)
 
 
 def _avisar_ia_no_disponible(db: Session, negocio: Negocio, cliente) -> None:
@@ -187,8 +220,13 @@ def procesar_mensaje(db: Session, negocio: Negocio, telefono_cliente: str, texto
     )
 
     if respuesta is None:
-        # Ningún modelo respondió: contestamos igual con los datos del negocio
-        # (servicios, horario, dirección) y avisamos al dueño para que siga él.
+        # Ningún modelo respondió. 1) Si el cliente está dando datos para
+        # agendar, se juntan entre mensajes y se reserva con las mismas reglas.
+        respuesta = _agendar_sin_ia(db, negocio, cliente, contexto, catalogo, historial, texto_mensaje)
+
+    if respuesta is None:
+        # 2) Si no, contestamos con los datos del negocio (servicios, horario,
+        # dirección) y avisamos al dueño para que siga él.
         respuesta = respuesta_sin_ia.generar(
             texto_mensaje,
             perfil,

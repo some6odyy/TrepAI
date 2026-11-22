@@ -179,6 +179,12 @@ Dashboard está abierto.
    agendar) y queda un aviso ⚠️ en el Dashboard para que el dueño siga la
    conversación desde Conversaciones.
 
+Sin IA el bot **igual agenda** (`services/reserva_sin_ia.py`): junta el
+servicio, día, hora, nombre, correo y teléfono que el cliente va dando en uno
+o varios mensajes ("Degradado con diseño" → "mañana a las 18" → "Yohel,
+yohel@gmail.com, 967158624"), pide solo lo que falta y reserva con las mismas
+reglas que el agendado con IA (horario, 2 h de anticipación, horas ocupadas).
+
 Los logs de Vercel muestran el motivo de cada falla (ej. `respondió 429: ...`).
 
 ## Dashboard en vivo y respuestas manuales
