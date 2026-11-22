@@ -195,6 +195,10 @@ def procesar_mensaje(db: Session, negocio: Negocio, telefono_cliente: str, texto
             catalogo_dicts,
             catalogo_habilitado=contexto.consultar_catalogo if contexto else True,
             nombre_cliente=cliente.nombre_cliente,
+            ya_saludo=any(emisor != "cliente" for emisor, _ in historial),
+            catalogo_ya_enviado=any(
+                emisor != "cliente" and "nuestros servicios" in contenido for emisor, contenido in historial
+            ),
         )
         _avisar_ia_no_disponible(db, negocio, cliente)
 

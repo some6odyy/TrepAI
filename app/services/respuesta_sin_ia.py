@@ -44,44 +44,90 @@ def _lista_servicios(catalogo: list[dict]) -> str:
     return "\n".join(lineas)
 
 
+_RE_CUANDO = re.compile(
+    r"\b(hoy|manana|pasado|lunes|martes|miercoles|jueves|viernes|sabado|domingo|a las|"
+    r"\d{1,2}(:\d{2})?\s*(hrs?|h|am|pm)\b|\d{1,2}:\d{2})"
+)
+
+
+def _servicio_mencionado(texto: str, catalogo: list[dict]) -> dict | None:
+    """El servicio del catálogo nombrado en el mensaje. Si calzan varios
+    ("degradado" y "degradado con diseño"), gana el nombre más largo."""
+    t = _normalizar(texto)
+    candidatos = [s for s in catalogo if _normalizar(s.get("nombre_servicio", "")).strip() and
+                  _normalizar(s["nombre_servicio"]).strip() in t]
+    return max(candidatos, key=lambda s: len(s["nombre_servicio"])) if candidatos else None
+
+
+def _detalle(servicio: dict) -> str:
+    partes = [x for x in (_precio(servicio.get("precio")),
+                          f"{servicio['duracion_estimada']} min" if servicio.get("duracion_estimada") else "") if x]
+    return f" ({' · '.join(partes)})" if partes else ""
+
+
 def generar(
     mensaje_cliente: str,
     perfil_negocio: dict,
     catalogo: list[dict],
     catalogo_habilitado: bool = True,
     nombre_cliente: str | None = None,
+    ya_saludo: bool = False,
+    catalogo_ya_enviado: bool = False,
 ) -> str:
-    """Arma una respuesta con datos del negocio, sin llamar a la IA."""
+    """Arma una respuesta con datos del negocio, sin llamar a la IA.
+    ya_saludo / catalogo_ya_enviado evitan repetir el saludo y la lista
+    completa de servicios en cada mensaje de la misma conversación."""
     nombre_negocio = perfil_negocio.get("nombre_negocio") or "nuestro local"
     horario = perfil_negocio.get("horario")
     direccion = perfil_negocio.get("direccion")
     temas = _detectar(mensaje_cliente)
     mostrar_catalogo = catalogo_habilitado and bool(catalogo)
+    servicio = _servicio_mencionado(mensaje_cliente, catalogo) if mostrar_catalogo else None
+    habla_de_cuando = bool(_RE_CUANDO.search(_normalizar(mensaje_cliente)))
+    primer_nombre = nombre_cliente.split()[0] if nombre_cliente else ""
+    saludo = "" if ya_saludo else f"¡Hola{' ' + primer_nombre if primer_nombre else ''}! 👋 "
 
     partes: list[str] = []
-    if "servicios" in temas and mostrar_catalogo:
-        partes.append(f"Estos son nuestros servicios:\n{_lista_servicios(catalogo)}")
+
+    if servicio is not None and ("agendar" in temas or habla_de_cuando):
+        partes.append(
+            f"¡Perfecto! Anoté *{servicio['nombre_servicio']}*{_detalle(servicio)} para el día y la hora que "
+            f"indicaste. Para dejarla reservada envíame tu *nombre*, *correo* y un *teléfono* para los "
+            f"recordatorios; alguien del equipo revisa la disponibilidad y te confirma a la brevedad."
+        )
+    elif servicio is not None:
+        partes.append(
+            f"*{servicio['nombre_servicio']}*{_detalle(servicio)}. ¿Para qué día y hora lo quieres? "
+            f"(se agenda con al menos 2 horas de anticipación)"
+        )
+    else:
+        if "servicios" in temas and mostrar_catalogo:
+            partes.append(f"Estos son nuestros servicios:\n{_lista_servicios(catalogo)}")
+        if "agendar" in temas:
+            pide_servicio = "qué servicio quieres, " if mostrar_catalogo else ""
+            partes.append(
+                f"Para agendar, cuéntame {pide_servicio}el día y la hora (con al menos 2 horas de "
+                "anticipación), tu nombre, correo y un teléfono para los recordatorios. "
+                "Alguien del equipo te confirma la hora a la brevedad."
+            )
+
     if "horario" in temas and horario:
         partes.append(f"🕒 Atendemos: *{horario}*")
     if "direccion" in temas and direccion:
         partes.append(f"📍 Estamos en *{direccion}*")
-    if "agendar" in temas:
-        partes.append(
-            "Para agendar, cuéntame qué servicio quieres, el día y la hora (con al menos 2 horas de "
-            "anticipación), tu nombre, correo y un teléfono para los recordatorios. "
-            "Alguien del equipo te confirma la hora a la brevedad."
-        )
 
-    saludo = f"¡Hola{' ' + nombre_cliente.split()[0] if nombre_cliente else ''}! 👋"
     if partes:
-        return f"{saludo}\n\n" + "\n\n".join(partes) + "\n\n¿Te ayudo con algo más?"
+        return (saludo + "\n\n".join(partes)).strip()
 
-    # No reconocimos la pregunta: presentamos lo principal del negocio
-    resumen = [f"{saludo} Te escribe el asistente de *{nombre_negocio}*."]
+    # No reconocimos la pregunta
+    if ya_saludo or catalogo_ya_enviado:
+        return "¡Gracias por tu mensaje! 🙌 Alguien del equipo te responderá a la brevedad."
+
+    resumen = [f"{saludo}Te escribe el asistente de *{nombre_negocio}*.".strip()]
     if mostrar_catalogo:
         resumen.append(f"Estos son nuestros servicios:\n{_lista_servicios(catalogo)}")
     datos = " · ".join(x for x in (f"🕒 {horario}" if horario else "", f"📍 {direccion}" if direccion else "") if x)
     if datos:
         resumen.append(datos)
-    resumen.append("Cuéntame qué necesitas y alguien del equipo te responderá a la brevedad.")
+    resumen.append("¿Qué servicio te interesa?")
     return "\n\n".join(resumen)

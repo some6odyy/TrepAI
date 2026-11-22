@@ -71,6 +71,14 @@ function fechaLocalISO(d = new Date()) {
   return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}`;
 }
 
+// Formato de WhatsApp en las burbujas: *negrita*, _cursiva_, ~tachado~
+function formatoWhatsapp(texto) {
+  return escapeHtml(texto)
+    .replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,!?:;]|$)/g, '$1<b>$2</b>')
+    .replace(/(^|[\s(])_([^_\n]+)_(?=[\s).,!?:;]|$)/g, '$1<i>$2</i>')
+    .replace(/(^|[\s(])~([^~\n]+)~(?=[\s).,!?:;]|$)/g, '$1<s>$2</s>');
+}
+
 // "56988335580" -> "+56 9 8833 5580" (otros países: "+" y los dígitos)
 function formatoTelefono(tel) {
   const d = String(tel || '').replace(/\D/g, '');
@@ -681,6 +689,31 @@ document.querySelectorAll('.model-option').forEach((opt) => {
   });
 });
 
+/* ---- Probar IA: muestra qué modelo responde y por qué falla cada uno ---- */
+
+$('btnProbarIa').addEventListener('click', async () => {
+  const btn = $('btnProbarIa');
+  btn.disabled = true;
+  $('probarIaEstado').textContent = 'Probando… (puede tardar hasta 15 s)';
+  $('probarIaLista').classList.add('hidden');
+  try {
+    const r = await api.probarIa(estado.negocio.id_negocio);
+    $('probarIaEstado').innerHTML = r.funciona
+      ? '<b class="ok">✅ La IA está funcionando.</b>'
+      : '<b class="no">❌ La IA no respondió.</b> Mientras tanto el bot contesta con los datos de tu negocio.';
+    $('probarIaLista').innerHTML = r.intentos.map((i) => `
+      <li class="${i.ok ? 'ok' : 'no'}">
+        <span class="mono">${escapeHtml(i.proveedor)} / ${escapeHtml(i.modelo)}</span>
+        <span>${escapeHtml(i.detalle)}${i.segundos != null ? ` <small>(${i.segundos} s)</small>` : ''}</span>
+      </li>`).join('');
+    $('probarIaLista').classList.remove('hidden');
+  } catch (error) {
+    $('probarIaEstado').textContent = error.message;
+  } finally {
+    btn.disabled = false;
+  }
+});
+
 document.getElementById('formServicio').addEventListener('submit', (e) => {
   e.preventDefault();
   manejarEnvio(e.target, async () => {
@@ -944,7 +977,7 @@ async function abrirMensajes(conv, { silencioso = false } = {}) {
         // Solo se animan los mensajes que recién llegan
         const anim = i >= previos ? `animation-delay:${Math.min(i - previos, 12) * 25}ms` : 'animation:none';
         return `${separador}
-          <div class="bubble ${ETIQUETA_EMISOR[m.emisor] || 'cliente'}" style="${anim}">${escapeHtml(m.contenido)}<time>${formatoHora(m.fecha_hora)}</time></div>`;
+          <div class="bubble ${ETIQUETA_EMISOR[m.emisor] || 'cliente'}" style="${anim}">${formatoWhatsapp(m.contenido)}<time>${formatoHora(m.fecha_hora)}</time></div>`;
       }).join('');
 
     actualizarComposer(conv);

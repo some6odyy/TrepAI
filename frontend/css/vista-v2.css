@@ -272,3 +272,14 @@ section.vista-v2.active { animation: v2-rise .35s var(--ease); }
   .vista-v2 .inbox { height: calc(100dvh - 280px); min-height: 380px; }
 }
 .aviso.ia_no_disponible .aviso-icono { background: var(--danger); }
+
+/* ---- Probar IA ---- */
+.probar-ia { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 4px 0 14px; font-size: 13.5px; }
+.probar-ia .ok { color: var(--success); }
+.probar-ia .no { color: var(--danger); }
+.probar-ia-lista { list-style: none; margin: 0 0 16px; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
+.probar-ia-lista li { display: grid; grid-template-columns: minmax(150px, auto) 1fr; gap: 12px; padding: 9px 12px; font-size: 13px; border-bottom: 1px solid var(--border); word-break: break-word; }
+.probar-ia-lista li:last-child { border-bottom: none; }
+.probar-ia-lista li.ok { background: var(--success-tint); }
+.probar-ia-lista li.no { background: var(--danger-tint); }
+@media (max-width: 600px) { .probar-ia-lista li { grid-template-columns: 1fr; gap: 2px; } }

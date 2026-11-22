@@ -145,6 +145,23 @@ _CODIGOS_PASAJEROS = {408, 429, 500, 502, 503, 504}
 _MINIMO_POR_INTENTO = 2.5
 
 
+# Modelos "en pausa" tras una falla que no se arregla en segundos (cuota
+# diaria agotada, modelo inexistente, clave inválida): no se vuelven a probar
+# por un rato, así cada mensaje no pierde tiempo con ellos.
+_pausados: dict[tuple[str, str], float] = {}
+
+
+def _pausa_para(error: str) -> float:
+    t = error.lower()
+    if " 429" in t and ("perday" in t or "per day" in t):
+        return 30 * 60
+    if " 429" in t:
+        return 60
+    if any(f" {c}" in t for c in ("401", "403", "404")):
+        return 10 * 60
+    return 0
+
+
 def _clave(provider: str) -> str:
     return config.GEMINI_API_KEY if provider == "gemini" else config.OPENAI_API_KEY
 
@@ -171,26 +188,71 @@ def _plan_de_intentos(provider: str | None, model: str | None) -> list[tuple[str
     return plan
 
 
-def generar_respuesta_o_none(prompt: str, provider: str | None = None, model: str | None = None) -> str | None:
+def explicar_error(texto: str) -> str:
+    """Traduce el error del proveedor a algo que el dueño entienda."""
+    t = (texto or "").lower()
+    if "timeout" in t:
+        return "La IA se demoró demasiado en responder."
+    if " 429" in t or "quota" in t or "resource_exhausted" in t or "rate limit" in t:
+        if "per day" in t or "perday" in t or "daily" in t:
+            return "Se agotó la cuota DIARIA gratuita de esta clave. Vuelve mañana o activa la facturación."
+        return "Límite de uso alcanzado (cuota o demasiadas solicitudes por minuto)."
+    if " 404" in t or "not found" in t:
+        return "Ese modelo no existe o tu clave no tiene acceso a él."
+    if "api key" in t or " 401" in t or " 403" in t or "permission" in t:
+        return "La clave de IA no es válida o no tiene permisos."
+    if " 400" in t:
+        return "El proveedor rechazó la solicitud (400)."
+    if any(f" {c}" in t for c in ("500", "502", "503", "504")) or "overloaded" in t or "unavailable" in t:
+        return "El servidor de la IA está saturado o caído en este momento."
+    if "vac" in t or "bloque" in t or "sin candidatos" in t:
+        return "La IA devolvió una respuesta vacía o bloqueada."
+    return "Error de conexión con la IA."
+
+
+def generar_respuesta_o_none(
+    prompt: str,
+    provider: str | None = None,
+    model: str | None = None,
+    registro: list | None = None,
+) -> str | None:
     """Prueba el modelo del negocio y, si falla, los de respaldo, sin pasarse
     del límite de RNF-01 (MAX_RESPONSE_LATENCY_SECONDS en total).
-    Devuelve el texto o None si ningún intento funcionó."""
+    Devuelve el texto o None si ningún intento funcionó.
+    Si se pasa `registro` (lista), se anota cada intento: lo usa el botón
+    "Probar IA" del Dashboard para mostrar qué falla."""
     plan = _plan_de_intentos(provider, model)
     if not plan:
         logger.error("No hay clave de IA configurada (AI_API_KEY / GEMINI_API_KEY / OPENAI_API_KEY)")
+        if registro is not None:
+            registro.append({"proveedor": "-", "modelo": "-", "ok": False,
+                             "detalle": "No hay clave de IA configurada en el servidor (AI_API_KEY)."})
         return None
+
+    def anotar(prov, modelo, ok, detalle, t0):
+        if registro is not None:
+            registro.append({"proveedor": prov, "modelo": modelo, "ok": ok,
+                             "detalle": detalle, "segundos": round(time.monotonic() - t0, 1)})
 
     inicio = time.monotonic()
 
     def restante() -> float:
         return MAX_RESPONSE_LATENCY_SECONDS - (time.monotonic() - inicio)
 
+    # Los modelos en pausa van al final (se prueban solo si los demás fallan)
+    ahora = time.monotonic()
+    plan = [x for x in plan if _pausados.get(x, 0) <= ahora] + [x for x in plan if _pausados.get(x, 0) > ahora]
+
     for i, (prov, modelo) in enumerate(plan):
         # Un error pasajero (429/503) merece un segundo intento con el mismo modelo
         for intento in (1, 2):
             if restante() < _MINIMO_POR_INTENTO:
+                if registro is not None:
+                    registro.append({"proveedor": prov, "modelo": modelo, "ok": False,
+                                     "detalle": "No alcanzó a probarse: se acabaron los 15 s."})
                 logger.error("Se acabó el tiempo de RNF-01 tras %s intento(s) de IA", i + intento - 1)
                 return None
+            t0 = time.monotonic()
             try:
                 # Dejamos tiempo para un respaldo si este modelo se cuelga
                 limite = restante() if i == len(plan) - 1 else min(restante(), max(restante() * 0.6, _MINIMO_POR_INTENTO))
@@ -200,19 +262,27 @@ def generar_respuesta_o_none(prompt: str, provider: str | None = None, model: st
                     texto = _generar_respuesta_openai(prompt, modelo, limite)
                 if not texto:
                     raise ErrorIA("respuesta vacía", reintentable=False)
+                anotar(prov, modelo, True, "Respondió correctamente.", t0)
+                _pausados.pop((prov, modelo), None)
                 if i or intento > 1:
                     logger.warning("IA respondió con %s/%s tras fallas previas", prov, modelo)
                 return texto
             except requests.Timeout:
                 logger.warning("IA %s/%s: timeout", prov, modelo)
+                anotar(prov, modelo, False, explicar_error("timeout"), t0)
                 break  # pasar al siguiente modelo, no repetir uno lento
             except ErrorIA as error:
                 logger.warning("IA %s/%s falló (intento %s): %s", prov, modelo, intento, error)
-                if not error.reintentable or intento == 2:
+                anotar(prov, modelo, False, f"{explicar_error(str(error))} [{str(error)[:160]}]", t0)
+                pausa = _pausa_para(str(error))
+                if pausa:
+                    _pausados[(prov, modelo)] = time.monotonic() + pausa
+                if pausa > 60 or not error.reintentable or intento == 2:
                     break
                 time.sleep(min(1.0, max(restante() - _MINIMO_POR_INTENTO, 0)))
             except (requests.RequestException, KeyError, IndexError, ValueError) as error:
                 logger.warning("IA %s/%s error: %s", prov, modelo, error)
+                anotar(prov, modelo, False, f"{explicar_error(str(error))} [{str(error)[:160]}]", t0)
                 break
     return None
 
@@ -227,7 +297,7 @@ def generar_respuesta(prompt: str, provider: str | None = None, model: str | Non
 def _revisar_estado(respuesta, proveedor: str, modelo: str) -> None:
     if respuesta.ok:
         return
-    detalle = (respuesta.text or "")[:300].replace("\n", " ")
+    detalle = " ".join((respuesta.text or "")[:1500].split())
     raise ErrorIA(
         f"{proveedor} {modelo} respondió {respuesta.status_code}: {detalle}",
         reintentable=respuesta.status_code in _CODIGOS_PASAJEROS,

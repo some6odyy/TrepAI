@@ -84,6 +84,25 @@ def test_motor():
     simular([])
     assert ai_service.generar_respuesta_o_none("p") is None
 
+    # cuota DIARIA agotada: el modelo queda en pausa y pasa al final de la fila
+    ai_service._pausados.clear()
+    diaria = Resp(429, text='{"error": {"status": "RESOURCE_EXHAUSTED", "quotaId": "GenerateRequestsPerDayPerProjectPerModel-FreeTier"}}')
+    simular([diaria, ok("respaldo")])
+    assert ai_service.generar_respuesta_o_none("p", "gemini", "gemini-3.6-flash") == "respaldo"
+    assert LLAMADAS == ["gemini-3.6-flash", "gemini-3.5-flash-lite"], LLAMADAS  # sin reintentar el agotado
+    simular([ok("directo")])
+    assert ai_service.generar_respuesta_o_none("p", "gemini", "gemini-3.6-flash") == "directo"
+    assert LLAMADAS == ["gemini-3.5-flash-lite"], LLAMADAS  # el pausado ya no se prueba primero
+    ai_service._pausados.clear()
+
+    # registro para el botón "Probar IA"
+    registro = []
+    simular([diaria, Resp(404, text="models/x is not found"), Resp(404, text="not found")])
+    ai_service.generar_respuesta_o_none("p", "gemini", "gemini-3.6-flash", registro=registro)
+    assert "cuota DIARIA" in registro[0]["detalle"], registro
+    assert "no existe" in registro[1]["detalle"], registro
+    ai_service._pausados.clear()
+
 
 def test_respuesta_sin_ia():
     perfil = {"nombre_negocio": "Barbería Sin Pelos", "horario": "Lun-Sáb 10:00-19:00", "direccion": "La Lengua 123"}
@@ -97,6 +116,19 @@ def test_respuesta_sin_ia():
     assert "Hola Yohel" in r and "correo" in r
     r = respuesta_sin_ia.generar("jajaja", perfil, cat)
     assert "Barbería Sin Pelos" in r and "Degradado" in r
+
+    # Casos de la conversación real (capturas)
+    cat2 = cat + [{"nombre_servicio": "Degradado con diseño", "precio": 14000, "duracion_estimada": 45}]
+    r = respuesta_sin_ia.generar("Degradado con diseño", perfil, cat2, ya_saludo=True, catalogo_ya_enviado=True)
+    assert r.startswith("*Degradado con diseño* ($14.000 · 45 min)") and "Hola" not in r, r
+    assert "Barba" not in r  # no repite el catálogo
+    r = respuesta_sin_ia.generar("Quiero un degradado con diseño para mañana a las 18", perfil, cat2,
+                                 ya_saludo=True, catalogo_ya_enviado=True)
+    assert "Anoté *Degradado con diseño*" in r and "correo" in r and "Hola" not in r, r
+    r = respuesta_sin_ia.generar("Quiero agendar", perfil, cat2, ya_saludo=True, catalogo_ya_enviado=True)
+    assert "Hola" not in r and "Para agendar" in r and "Barba" not in r, r
+    r = respuesta_sin_ia.generar("ok gracias", perfil, cat2, ya_saludo=True, catalogo_ya_enviado=True)
+    assert r.startswith("¡Gracias por tu mensaje!") and "Degradado" not in r, r
     assert "Degradado" not in respuesta_sin_ia.generar("servicios?", perfil, cat, catalogo_habilitado=False)
 
 
@@ -121,6 +153,17 @@ def test_webhook_responde_siempre():
     assert len(enviados) == 2 and "Degradado" in enviados[0] and "no puedo procesar" not in enviados[0], enviados
     avisos = [a for a in c.get(f"/negocio/{idn}/novedades", headers=h).json()["avisos"] if a["tipo"] == "ia_no_disponible"]
     assert len(avisos) == 1, avisos  # no se repite mientras no se lea
+    # El segundo mensaje igual no repite saludo ni catálogo
+    assert "Hola" not in enviados[1] and "Degradado" in enviados[0], enviados
+
+    # Botón "Probar IA"
+    ai_service._pausados.clear()
+    simular([ok("OK")])
+    r = c.post(f"/negocio/{idn}/contexto/probar-ia", headers=h).json()
+    assert r["funciona"] is True and r["intentos"][0]["ok"] is True, r
+    simular([])
+    r = c.post(f"/negocio/{idn}/contexto/probar-ia", headers=h).json()
+    assert r["funciona"] is False and all(not i["ok"] for i in r["intentos"]), r
 
 
 if __name__ == "__main__":

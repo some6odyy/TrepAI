@@ -92,6 +92,7 @@ const api = {
   responderConversacion: (id, idConversacion, texto) =>
     apiFetch(`/negocio/${id}/conversaciones/${idConversacion}/mensajes`, { method: 'POST', body: { texto } }),
 
+  probarIa: (id) => apiFetch(`/negocio/${id}/contexto/probar-ia`, { method: 'POST' }),
   novedades: (id) => apiFetch(`/negocio/${id}/novedades`),
   leerAvisos: (id, ids = null) => apiFetch(`/negocio/${id}/avisos/leer`, { method: 'POST', body: { ids } }),
 };

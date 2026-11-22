@@ -145,3 +145,23 @@ def eliminar_servicio(
     servicio = _obtener_servicio_propio(id_servicio, db, negocio)
     db.delete(servicio)
     db.commit()
+
+
+@router.post("/probar-ia")
+def probar_ia(
+    db: Session = Depends(get_db),
+    negocio: Negocio = Depends(obtener_negocio_propio),
+):
+    """Botón "Probar IA" del Dashboard: hace una consulta corta con el motor
+    elegido y los respaldos, y devuelve el resultado de cada intento."""
+    from app.services import ai_service
+
+    contexto = db.query(ContextoIA).filter(ContextoIA.id_negocio == negocio.id_negocio).first()
+    registro: list = []
+    texto = ai_service.generar_respuesta_o_none(
+        "Responde solo con la palabra OK.",
+        provider=contexto.ai_provider if contexto else None,
+        model=contexto.ai_model if contexto else None,
+        registro=registro,
+    )
+    return {"funciona": texto is not None, "intentos": registro}
