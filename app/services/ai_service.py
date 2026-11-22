@@ -10,7 +10,8 @@ from datetime import datetime, timedelta, timezone
 import requests
 
 from app.core.tiempo import ahora_chile  # noqa: F401 — se reexporta (agendado_ia/chat_service lo usan)
-from app.core.config import AI_PROVIDER, AI_API_KEY, GEMINI_MODEL, OPENAI_MODEL, MAX_RESPONSE_LATENCY_SECONDS
+from app.core import config
+from app.core.config import AI_PROVIDER, GEMINI_MODEL, OPENAI_MODEL, MAX_RESPONSE_LATENCY_SECONDS
 
 logger = logging.getLogger("trepai.ai_service")
 
@@ -129,85 +130,150 @@ def armar_prompt(
     )
 
 
-def generar_respuesta(prompt: str, provider: str | None = None, model: str | None = None) -> str:
-    """Envía el prompt al proveedor de IA y devuelve el texto de respuesta.
+class ErrorIA(Exception):
+    """Falla de un intento contra el proveedor. reintentable=True para
+    errores pasajeros (429 límite de uso, 5xx servidor saturado, red)."""
 
-    provider/model son el motor elegido por ESE negocio en el bloque
-    "Motor de IA" del Dashboard (RF-08); si no se pasan, se usa el
-    default global del .env. Debe cumplir RNF-01 (ciclo total < 15
-    segundos): si la IA no responde a tiempo o falla, usamos
-    RESPUESTA_DE_RESPALDO en vez de dejar al cliente sin respuesta."""
-    provider = provider or AI_PROVIDER
-
-    if not AI_API_KEY:
-        logger.warning("AI_API_KEY no configurada — no se puede consultar al proveedor de IA")
-        return RESPUESTA_DE_RESPALDO
-
-    try:
-        if provider == "gemini":
-            return _generar_respuesta_gemini(prompt, model or GEMINI_MODEL)
-        elif provider == "openai":
-            return _generar_respuesta_openai(prompt, model or OPENAI_MODEL)
-        else:
-            logger.error("Proveedor de IA desconocido: %s", provider)
-            return RESPUESTA_DE_RESPALDO
-
-    except requests.Timeout:
-        logger.error("Timeout consultando al proveedor de IA (RNF-01: máx %ss)", MAX_RESPONSE_LATENCY_SECONDS)
-        return RESPUESTA_DE_RESPALDO
-    except (requests.RequestException, KeyError, IndexError) as error:
-        logger.error("Error consultando al proveedor de IA: %s", error)
-        return RESPUESTA_DE_RESPALDO
+    def __init__(self, mensaje: str, reintentable: bool = True):
+        super().__init__(mensaje)
+        self.reintentable = reintentable
 
 
-def _generar_respuesta_gemini(prompt: str, modelo: str) -> str:
-    """https://ai.google.dev/gemini-api/docs/text-generation
+# Códigos HTTP que indican un problema pasajero del proveedor
+_CODIGOS_PASAJEROS = {408, 429, 500, 502, 503, 504}
+# No se empieza un intento si queda menos que esto del límite de RNF-01
+_MINIMO_POR_INTENTO = 2.5
 
-    Los modelos Gemini 3.x "piensan" antes de responder y con el nivel por
-    defecto pueden pasar los 15 s de RNF-01. Para un chat de atención basta
-    con pensamiento bajo ("low"), que responde mucho más rápido. Si el
-    modelo no acepta ese parámetro (400), se reintenta sin él."""
-    url = (
-        f"https://generativelanguage.googleapis.com/v1beta/models/"
-        f"{modelo}:generateContent?key={AI_API_KEY}"
-    )
-    body = {"contents": [{"parts": [{"text": prompt}]}]}
-    if modelo.startswith("gemini-3"):
-        body["generationConfig"] = {"thinkingConfig": {"thinkingLevel": "low"}}
+
+def _clave(provider: str) -> str:
+    return config.GEMINI_API_KEY if provider == "gemini" else config.OPENAI_API_KEY
+
+
+def _plan_de_intentos(provider: str | None, model: str | None) -> list[tuple[str, str]]:
+    """Orden en que se prueban los modelos: primero el elegido por el negocio,
+    luego los de respaldo del mismo proveedor y, si hay clave, los del otro."""
+    provider = provider if provider in ("gemini", "openai") else AI_PROVIDER
+    principal = model or (GEMINI_MODEL if provider == "gemini" else OPENAI_MODEL)
+    otro = "openai" if provider == "gemini" else "gemini"
+    respaldo = {"gemini": config.GEMINI_MODELOS_RESPALDO, "openai": config.OPENAI_MODELOS_RESPALDO}
+    defecto = {"gemini": GEMINI_MODEL, "openai": OPENAI_MODEL}
+
+    plan: list[tuple[str, str]] = []
+    for prov, modelos in (
+        (provider, [principal, *respaldo[provider]]),
+        (otro, [defecto[otro], *respaldo[otro]]),
+    ):
+        if not _clave(prov):
+            continue
+        for m in modelos:
+            if (prov, m) not in plan:
+                plan.append((prov, m))
+    return plan
+
+
+def generar_respuesta_o_none(prompt: str, provider: str | None = None, model: str | None = None) -> str | None:
+    """Prueba el modelo del negocio y, si falla, los de respaldo, sin pasarse
+    del límite de RNF-01 (MAX_RESPONSE_LATENCY_SECONDS en total).
+    Devuelve el texto o None si ningún intento funcionó."""
+    plan = _plan_de_intentos(provider, model)
+    if not plan:
+        logger.error("No hay clave de IA configurada (AI_API_KEY / GEMINI_API_KEY / OPENAI_API_KEY)")
+        return None
 
     inicio = time.monotonic()
 
     def restante() -> float:
         return MAX_RESPONSE_LATENCY_SECONDS - (time.monotonic() - inicio)
 
-    respuesta = requests.post(url, json=body, timeout=restante())
+    for i, (prov, modelo) in enumerate(plan):
+        # Un error pasajero (429/503) merece un segundo intento con el mismo modelo
+        for intento in (1, 2):
+            if restante() < _MINIMO_POR_INTENTO:
+                logger.error("Se acabó el tiempo de RNF-01 tras %s intento(s) de IA", i + intento - 1)
+                return None
+            try:
+                # Dejamos tiempo para un respaldo si este modelo se cuelga
+                limite = restante() if i == len(plan) - 1 else min(restante(), max(restante() * 0.6, _MINIMO_POR_INTENTO))
+                if prov == "gemini":
+                    texto = _generar_respuesta_gemini(prompt, modelo, limite)
+                else:
+                    texto = _generar_respuesta_openai(prompt, modelo, limite)
+                if not texto:
+                    raise ErrorIA("respuesta vacía", reintentable=False)
+                if i or intento > 1:
+                    logger.warning("IA respondió con %s/%s tras fallas previas", prov, modelo)
+                return texto
+            except requests.Timeout:
+                logger.warning("IA %s/%s: timeout", prov, modelo)
+                break  # pasar al siguiente modelo, no repetir uno lento
+            except ErrorIA as error:
+                logger.warning("IA %s/%s falló (intento %s): %s", prov, modelo, intento, error)
+                if not error.reintentable or intento == 2:
+                    break
+                time.sleep(min(1.0, max(restante() - _MINIMO_POR_INTENTO, 0)))
+            except (requests.RequestException, KeyError, IndexError, ValueError) as error:
+                logger.warning("IA %s/%s error: %s", prov, modelo, error)
+                break
+    return None
+
+
+def generar_respuesta(prompt: str, provider: str | None = None, model: str | None = None) -> str:
+    """Compatibilidad: igual que generar_respuesta_o_none pero, si todo falla,
+    devuelve RESPUESTA_DE_RESPALDO. El chat usa la respuesta sin IA
+    (respuesta_sin_ia.py), que es más útil para el cliente."""
+    return generar_respuesta_o_none(prompt, provider, model) or RESPUESTA_DE_RESPALDO
+
+
+def _revisar_estado(respuesta, proveedor: str, modelo: str) -> None:
+    if respuesta.ok:
+        return
+    detalle = (respuesta.text or "")[:300].replace("\n", " ")
+    raise ErrorIA(
+        f"{proveedor} {modelo} respondió {respuesta.status_code}: {detalle}",
+        reintentable=respuesta.status_code in _CODIGOS_PASAJEROS,
+    )
+
+
+def _generar_respuesta_gemini(prompt: str, modelo: str, limite: float = MAX_RESPONSE_LATENCY_SECONDS) -> str:
+    """https://ai.google.dev/gemini-api/docs/text-generation
+
+    Los modelos Gemini 3.x "piensan" antes de responder y con el nivel por
+    defecto pueden pasar los 15 s de RNF-01. Para un chat de atención basta
+    con pensamiento bajo ("low"), que responde mucho más rápido. Si el
+    modelo no acepta ese parámetro (400), se reintenta sin él."""
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{modelo}:generateContent"
+    headers = {"x-goog-api-key": config.GEMINI_API_KEY}
+    body = {"contents": [{"parts": [{"text": prompt}]}]}
+    if modelo.startswith("gemini-3"):
+        body["generationConfig"] = {"thinkingConfig": {"thinkingLevel": "low"}}
+
+    inicio = time.monotonic()
+    respuesta = requests.post(url, headers=headers, json=body, timeout=limite)
 
     if respuesta.status_code == 400 and "generationConfig" in body:
         logger.warning("El modelo %s no aceptó thinkingLevel=low, reintentando sin él", modelo)
         body.pop("generationConfig")
-        respuesta = requests.post(url, json=body, timeout=max(restante(), 1))
+        respuesta = requests.post(url, headers=headers, json=body, timeout=max(limite - (time.monotonic() - inicio), 1))
 
-    # 429 = límite de solicitudes por minuto (frecuente en el plan gratuito):
-    # un reintento corto si todavía queda tiempo dentro de RNF-01.
-    if respuesta.status_code == 429 and restante() > 5:
-        logger.warning("Gemini respondió 429 (límite de uso), reintentando en 2 s")
-        time.sleep(2)
-        respuesta = requests.post(url, json=body, timeout=max(restante(), 1))
-
-    respuesta.raise_for_status()
+    _revisar_estado(respuesta, "gemini", modelo)
     data = respuesta.json()
 
-    partes = data["candidates"][0]["content"]["parts"]
+    candidatos = data.get("candidates") or []
+    if not candidatos:
+        # Bloqueado por filtros de seguridad o sin candidatos
+        motivo = (data.get("promptFeedback") or {}).get("blockReason", "sin candidatos")
+        raise ErrorIA(f"gemini {modelo} no devolvió respuesta ({motivo})", reintentable=False)
+    partes = (candidatos[0].get("content") or {}).get("parts") or []
     # Con thinking activo pueden venir partes de "pensamiento"; solo usamos el texto final
     texto = "".join(p.get("text", "") for p in partes if not p.get("thought"))
     return texto.strip()
 
 
-def _generar_respuesta_openai(prompt: str, modelo: str) -> str:
+def _generar_respuesta_openai(prompt: str, modelo: str, limite: float = MAX_RESPONSE_LATENCY_SECONDS) -> str:
     """https://platform.openai.com/docs/api-reference/chat"""
     url = "https://api.openai.com/v1/chat/completions"
     headers = {
-        "Authorization": f"Bearer {AI_API_KEY}",
+        "Authorization": f"Bearer {config.OPENAI_API_KEY}",
         "Content-Type": "application/json",
     }
     body = {
@@ -215,8 +281,8 @@ def _generar_respuesta_openai(prompt: str, modelo: str) -> str:
         "messages": [{"role": "user", "content": prompt}],
     }
 
-    respuesta = requests.post(url, headers=headers, json=body, timeout=MAX_RESPONSE_LATENCY_SECONDS)
-    respuesta.raise_for_status()
+    respuesta = requests.post(url, headers=headers, json=body, timeout=limite)
+    _revisar_estado(respuesta, "openai", modelo)
     data = respuesta.json()
 
-    return data["choices"][0]["message"]["content"].strip()
+    return (data["choices"][0]["message"]["content"] or "").strip()

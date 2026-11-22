@@ -16,7 +16,8 @@ from app.models.negocio import Negocio
 from app.models.contexto_ia import ContextoIA
 from app.models.servicio import Servicio
 from app.models.conversacion import Conversacion, Mensaje
-from app.services import ai_service, agendado_ia, agenda_service, recordatorios
+from app.models.aviso import Aviso
+from app.services import ai_service, agendado_ia, agenda_service, recordatorios, respuesta_sin_ia
 from app.services.cliente_service import obtener_o_crear_cliente
 
 
@@ -81,6 +82,24 @@ def guardar_mensaje_sin_respuesta(db: Session, negocio: Negocio, telefono_client
     db.commit()
 
 
+def _avisar_ia_no_disponible(db: Session, negocio: Negocio, cliente) -> None:
+    """Un aviso por cliente mientras no se lea, para no llenar la campana."""
+    quien = cliente.nombre_cliente or cliente.telefono
+    texto = f"⚠️ La IA no estuvo disponible para responder a {quien}. Se le envió info básica; revisa Conversaciones."
+    ya_existe = (
+        db.query(Aviso.id_aviso)
+        .filter(
+            Aviso.id_negocio == negocio.id_negocio,
+            Aviso.tipo == "ia_no_disponible",
+            Aviso.leido.is_(False),
+            Aviso.texto == texto,
+        )
+        .first()
+    )
+    if ya_existe is None:
+        recordatorios.crear_aviso(db, negocio.id_negocio, "ia_no_disponible", texto)
+
+
 def procesar_mensaje(db: Session, negocio: Negocio, telefono_cliente: str, texto_mensaje: str) -> str:
     """Guarda el mensaje del cliente, arma el prompt con el contexto del
     negocio, consulta la IA, guarda la respuesta y la devuelve.
@@ -127,17 +146,25 @@ def procesar_mensaje(db: Session, negocio: Negocio, telefono_cliente: str, texto
     else:
         cita_activa_txt = None
 
+    catalogo_dicts = [
+        {
+            "nombre_servicio": s.nombre_servicio,
+            "precio": s.precio,
+            "duracion_estimada": s.duracion_estimada,
+        }
+        for s in catalogo
+    ]
+    perfil = {
+        "nombre_negocio": negocio.nombre_negocio,
+        "direccion": negocio.direccion,
+        "telefono": negocio.telefono,
+        "horario": negocio.horario,
+    }
+
     prompt = ai_service.armar_prompt(
         reglas_negocio=contexto.reglas_negocio if contexto else "",
         instrucciones=contexto.instrucciones if contexto else "",
-        catalogo=[
-            {
-                "nombre_servicio": s.nombre_servicio,
-                "precio": s.precio,
-                "duracion_estimada": s.duracion_estimada,
-            }
-            for s in catalogo
-        ],
+        catalogo=catalogo_dicts,
         mensaje_cliente=texto_mensaje,
         catalogo_habilitado=contexto.consultar_catalogo if contexto else True,
         historial=historial,
@@ -148,20 +175,28 @@ def procesar_mensaje(db: Session, negocio: Negocio, telefono_cliente: str, texto
             "correo": cliente.correo,
             "whatsapp": cliente.telefono,
         },
-        perfil_negocio={
-            "nombre_negocio": negocio.nombre_negocio,
-            "direccion": negocio.direccion,
-            "telefono": negocio.telefono,
-            "horario": negocio.horario,
-        },
+        perfil_negocio=perfil,
     )
 
     # RF-08: consultar el modelo de IA
-    respuesta = ai_service.generar_respuesta(
+    # (prueba el modelo elegido y, si falla, modelos de respaldo)
+    respuesta = ai_service.generar_respuesta_o_none(
         prompt,
         provider=contexto.ai_provider if contexto else None,
         model=contexto.ai_model if contexto else None,
     )
+
+    if respuesta is None:
+        # Ningún modelo respondió: contestamos igual con los datos del negocio
+        # (servicios, horario, dirección) y avisamos al dueño para que siga él.
+        respuesta = respuesta_sin_ia.generar(
+            texto_mensaje,
+            perfil,
+            catalogo_dicts,
+            catalogo_habilitado=contexto.consultar_catalogo if contexto else True,
+            nombre_cliente=cliente.nombre_cliente,
+        )
+        _avisar_ia_no_disponible(db, negocio, cliente)
 
     # Agendado automático: si la IA pidió reservar ([[AGENDAR|...]]), el
     # backend crea la cita pendiente con las mismas reglas del Dashboard y

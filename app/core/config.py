@@ -35,6 +35,19 @@ AI_PROVIDER = os.getenv("AI_PROVIDER", "gemini")  # gemini | openai
 AI_API_KEY = os.getenv("AI_API_KEY", "")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.4-mini")
+# Claves por proveedor (opcionales). Si no se definen, se usa AI_API_KEY para
+# el proveedor de AI_PROVIDER. Con las dos claves, si un proveedor falla se
+# intenta con el otro.
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip() or (AI_API_KEY if AI_PROVIDER == "gemini" else "")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip() or (AI_API_KEY if AI_PROVIDER == "openai" else "")
+# Modelos de respaldo, en orden, si el modelo elegido por el negocio falla
+# (límite de uso 429, servidor saturado 503, demora...). Separados por coma.
+GEMINI_MODELOS_RESPALDO = [
+    m.strip() for m in os.getenv("GEMINI_MODELOS_RESPALDO", "gemini-3.5-flash-lite,gemini-3.6-flash").split(",") if m.strip()
+]
+OPENAI_MODELOS_RESPALDO = [
+    m.strip() for m in os.getenv("OPENAI_MODELOS_RESPALDO", "gpt-5.4-mini,gpt-4o").split(",") if m.strip()
+]
 
 # --- Cifrado en reposo del token de WhatsApp de cada negocio ---
 # Clave de ejemplo solo para desarrollo local — en producción SIEMPRE se

@@ -30,7 +30,7 @@ def preparar():
 
 def enviar(idn, texto_ia, mensaje="quiero reservar", tel="56911111111"):
     """Procesa un mensaje simulando que la IA respondió texto_ia."""
-    ai_service.generar_respuesta = lambda prompt, provider=None, model=None: texto_ia
+    ai_service.generar_respuesta_o_none = lambda prompt, provider=None, model=None: texto_ia
     ai_service.ahora_chile = lambda: AHORA
     db = SessionLocal()
     try:

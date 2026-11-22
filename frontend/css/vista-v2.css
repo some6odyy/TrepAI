@@ -271,3 +271,4 @@ section.vista-v2.active { animation: v2-rise .35s var(--ease); }
 @media (max-width: 860px) {
   .vista-v2 .inbox { height: calc(100dvh - 280px); min-height: 380px; }
 }
+.aviso.ia_no_disponible .aviso-icono { background: var(--danger); }

@@ -164,6 +164,23 @@ Como respaldo, los recordatorios también se ejecutan "de pasada" (máx. 1 vez
 por minuto por negocio) cuando llega un mensaje por WhatsApp o cuando el
 Dashboard está abierto.
 
+## El bot responde siempre (IA con respaldo)
+
+`services/ai_service.py` → `generar_respuesta_o_none()`:
+
+1. Prueba el modelo elegido por el negocio. Si Gemini/OpenAI responde un
+   error pasajero (429 límite de uso, 500/502/503/504), reintenta 1 vez.
+2. Si sigue fallando, se demora o devuelve vacío, prueba los modelos de
+   respaldo (`GEMINI_MODELOS_RESPALDO` / `OPENAI_MODELOS_RESPALDO`) y, si
+   están las dos claves (`GEMINI_API_KEY` y `OPENAI_API_KEY`), el otro proveedor.
+3. Todo dentro del límite de 15 s de RNF-01.
+4. Si ningún modelo responde, `services/respuesta_sin_ia.py` contesta con los
+   datos reales del negocio (servicios y precios, horario, dirección, cómo
+   agendar) y queda un aviso ⚠️ en el Dashboard para que el dueño siga la
+   conversación desde Conversaciones.
+
+Los logs de Vercel muestran el motivo de cada falla (ej. `respondió 429: ...`).
+
 ## Dashboard en vivo y respuestas manuales
 
 - **Conversaciones:** el administrador puede responder al cliente desde el
