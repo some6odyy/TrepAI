@@ -128,7 +128,13 @@ def test_respuesta_sin_ia():
     r = respuesta_sin_ia.generar("Quiero agendar", perfil, cat2, ya_saludo=True, catalogo_ya_enviado=True)
     assert "Hola" not in r and "Para agendar" in r and "Barba" not in r, r
     r = respuesta_sin_ia.generar("ok gracias", perfil, cat2, ya_saludo=True, catalogo_ya_enviado=True)
-    assert r.startswith("¡Gracias por tu mensaje!") and "Degradado" not in r, r
+    assert r.startswith("¡De nada!"), r
+    r = respuesta_sin_ia.generar("Hola", perfil, cat2, nombre_cliente="Yohel🤠", ya_saludo=True, catalogo_ya_enviado=True)
+    assert r.startswith("¡Hola de nuevo, Yohel🤠!") and "agendar" in r, r
+    r = respuesta_sin_ia.generar("Buenas tardes!", perfil, cat2, ya_saludo=True)
+    assert r.startswith("¡Hola de nuevo!"), r
+    r = respuesta_sin_ia.generar("qwerty", perfil, cat2, ya_saludo=True, catalogo_ya_enviado=True)
+    assert "No estoy seguro" in r, r
     assert "Degradado" not in respuesta_sin_ia.generar("servicios?", perfil, cat, catalogo_habilitado=False)
 
 

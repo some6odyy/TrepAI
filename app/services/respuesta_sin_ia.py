@@ -50,6 +50,10 @@ _RE_CUANDO = re.compile(
 )
 
 
+_SALUDOS = {"hola", "holi", "holis", "ola", "buenas", "buenos", "buen", "hey", "wena", "wenas", "alo", "hi", "hello"}
+_GRACIAS = {"gracias", "grax", "muchas", "mil", "thanks", "vale", "perfecto", "genial", "ok", "okay", "listo", "dale"}
+
+
 def _servicio_mencionado(texto: str, catalogo: list[dict]) -> dict | None:
     """El servicio del catálogo nombrado en el mensaje. Si calzan varios
     ("degradado" y "degradado con diseño"), gana el nombre más largo."""
@@ -119,9 +123,20 @@ def generar(
     if partes:
         return (saludo + "\n\n".join(partes)).strip()
 
-    # No reconocimos la pregunta
+    t = _normalizar(mensaje_cliente).strip(" !¡.?¿,")
+    palabras = re.findall(r"[a-z]+", t)
+    if palabras and palabras[0] in _GRACIAS and len(palabras) <= 5:
+        return "¡De nada! 🙌 Cualquier otra cosa, aquí estoy."
     if ya_saludo or catalogo_ya_enviado:
-        return "¡Gracias por tu mensaje! 🙌 Alguien del equipo te responderá a la brevedad."
+        if palabras and (palabras[0] in _SALUDOS or t.startswith(("buenos dias", "buenas tardes", "buenas noches"))):
+            return (
+                f"¡Hola{' de nuevo, ' + primer_nombre if primer_nombre else ' de nuevo'}! 👋 ¿En qué te ayudo? "
+                "Puedo contarte nuestros servicios y precios, el horario, la dirección o ayudarte a agendar una hora."
+            )
+        return (
+            "No estoy seguro de haberte entendido 🙏 Puedo contarte nuestros *servicios y precios*, "
+            "el *horario*, la *dirección* o ayudarte a *agendar*. Si prefieres, alguien del equipo te responde a la brevedad."
+        )
 
     resumen = [f"{saludo}Te escribe el asistente de *{nombre_negocio}*.".strip()]
     if mostrar_catalogo:

@@ -283,3 +283,6 @@ section.vista-v2.active { animation: v2-rise .35s var(--ease); }
 .probar-ia-lista li.ok { background: var(--success-tint); }
 .probar-ia-lista li.no { background: var(--danger-tint); }
 @media (max-width: 600px) { .probar-ia-lista li { grid-template-columns: 1fr; gap: 2px; } }
+
+/* Teléfono en una sola línea en la lista de Conversaciones */
+.vista-v2 .conv-bottom small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
