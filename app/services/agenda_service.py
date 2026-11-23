@@ -50,6 +50,25 @@ class HorarioOcupadoError(Exception):
         )
 
 
+class HorarioBloqueadoError(HorarioOcupadoError):
+    """El intervalo cae en un horario bloqueado por el negocio (vacaciones,
+    feriado, almuerzo). Hereda de HorarioOcupadoError para que todo el código
+    que ya maneja "horario ocupado" (sugerencias de horas libres, 409 en la
+    API) lo trate igual."""
+
+    def __init__(self, motivo: str | None, inicio: time, fin: time, dia_completo: bool = False):
+        self.motivo = motivo
+        self.dia_completo = dia_completo
+        self.conflicto_inicio = inicio
+        self.conflicto_fin = fin
+        detalle = f" ({motivo})" if motivo else ""
+        if dia_completo:
+            texto = f"Ese día el negocio no atiende{detalle}."
+        else:
+            texto = f"Ese horario está bloqueado de {inicio:%H:%M} a {fin:%H:%M}{detalle}."
+        Exception.__init__(self, texto)
+
+
 class CitaActivaExistenteError(Exception):
     """El cliente ya tiene una cita pendiente o confirmada en el negocio."""
 
@@ -230,6 +249,13 @@ def validar_horario_libre(
         ini, fin = _intervalo(cita.fecha_cita, cita.hora_cita, duracion_minutos(servicio))
         if nuevo_ini < fin and ini < nuevo_fin:
             raise HorarioOcupadoError(ini.time(), fin.time())
+
+    # Horarios bloqueados por el negocio (vacaciones, feriados, almuerzo)
+    from app.services import bloqueo_service  # evita import circular
+    for ini, fin, bloqueo in bloqueo_service.tramos_del_dia(db, id_negocio, fecha):
+        if nuevo_ini < fin and ini < nuevo_fin:
+            dia_completo = ini.time() == time(0, 0) and fin - ini >= timedelta(hours=24)
+            raise HorarioBloqueadoError(bloqueo.motivo, ini.time(), (fin - timedelta(minutes=1)).time() if dia_completo else fin.time(), dia_completo)
 
 
 def crear_cita_validada(

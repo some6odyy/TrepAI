@@ -12,7 +12,10 @@ from fastapi.responses import RedirectResponse
 from app.db.database import Base, engine
 from app.core.config import CORS_ALLOWED_ORIGINS, BASE_DIR
 from app import models  # noqa: F401 — registra los modelos en Base antes de crear las tablas
-from app.routers import auth, negocio, contexto, webhook, agenda, conversaciones, puente, tareas, publico, novedades
+from app.routers import (
+    auth, negocio, contexto, webhook, agenda, conversaciones, puente, tareas, publico, novedades,
+    bloqueos, clientes, metricas,
+)
 
 app = FastAPI(
     title="TrepAI",
@@ -28,9 +31,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Crea las tablas si no existen (para desarrollo local con SQLite).
-# En producción esto se reemplaza por migraciones con Alembic.
-Base.metadata.create_all(bind=engine)
 
 
 # create_all NO agrega columnas a tablas que ya existen (ej. la BD de Neon en
@@ -45,6 +45,9 @@ _COLUMNAS_NUEVAS = [
     ("agenda", "confirmacion_1h_enviada", "TIMESTAMP"),
     ("agenda", "respuesta_cliente", "VARCHAR(10)"),
     ("cliente", "correo", "VARCHAR(100)"),
+    ("conversacion", "bot_pausado_hasta", "TIMESTAMP"),
+    ("mensaje", "latencia_ms", "INTEGER"),
+    ("mensaje", "origen_respuesta", "VARCHAR(15)"),
 ]
 
 
@@ -58,20 +61,50 @@ def _asegurar_columnas_nuevas():
         existentes = {c["name"] for c in inspector.get_columns(tabla)}
         if columna in existentes:
             continue
-        with engine.begin() as conexion:
-            conexion.execute(text(f"ALTER TABLE {tabla} ADD COLUMN {columna} {tipo}"))
-            if (tabla, columna) == ("agenda", "fecha_creacion"):
-                conexion.execute(text("UPDATE agenda SET fecha_creacion = CURRENT_TIMESTAMP"))
-            if (tabla, columna) == ("agenda", "aviso_reserva_enviado"):
-                conexion.execute(text("UPDATE agenda SET aviso_reserva_enviado = CURRENT_TIMESTAMP"))
+        try:
+            with engine.begin() as conexion:
+                conexion.execute(text(f"ALTER TABLE {tabla} ADD COLUMN {columna} {tipo}"))
+                if (tabla, columna) == ("agenda", "fecha_creacion"):
+                    conexion.execute(text("UPDATE agenda SET fecha_creacion = CURRENT_TIMESTAMP"))
+                if (tabla, columna) == ("agenda", "aviso_reserva_enviado"):
+                    conexion.execute(text("UPDATE agenda SET aviso_reserva_enviado = CURRENT_TIMESTAMP"))
+        except Exception:
+            # En Vercel pueden arrancar dos instancias a la vez: si la otra ya
+            # agregó la columna, el ALTER falla y no pasa nada.
+            if columna not in {c["name"] for c in inspect(engine).get_columns(tabla)}:
+                raise
 
 
-_asegurar_columnas_nuevas()
+def _preparar_base_de_datos():
+    """Crea las tablas que falten y agrega las columnas nuevas.
+
+    En Vercel pueden arrancar varias instancias a la vez justo después de
+    un despliegue: en Postgres, un candado (advisory lock) hace que lo hagan
+    de a una, para que dos instancias no creen la misma tabla al mismo
+    tiempo (una de ellas se caería)."""
+    if engine.dialect.name != "postgresql":
+        Base.metadata.create_all(bind=engine)
+        _asegurar_columnas_nuevas()
+        return
+    with engine.connect() as candado:
+        candado.execute(text("SELECT pg_advisory_lock(739201)"))
+        try:
+            Base.metadata.create_all(bind=engine)
+            _asegurar_columnas_nuevas()
+        finally:
+            candado.execute(text("SELECT pg_advisory_unlock(739201)"))
+            candado.commit()
+
+
+_preparar_base_de_datos()
 
 app.include_router(auth.router)
 app.include_router(negocio.router)
 app.include_router(contexto.router)
 app.include_router(agenda.router)
+app.include_router(bloqueos.router)
+app.include_router(clientes.router)
+app.include_router(metricas.router)
 app.include_router(conversaciones.router)
 app.include_router(webhook.router)
 app.include_router(novedades.router)

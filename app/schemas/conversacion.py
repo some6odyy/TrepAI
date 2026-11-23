@@ -9,6 +9,8 @@ class MensajeResponse(BaseModel):
     contenido: str
     fecha_hora: datetime
     tipo_mensaje: str
+    latencia_ms: int | None = None
+    origen_respuesta: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -25,7 +27,14 @@ class ConversacionResponse(BaseModel):
     ultima_actividad: datetime | None = None
     # WhatsApp solo deja responder con texto libre si el cliente escribió en las últimas 24 h
     puede_responder: bool = False
+    # Tomar el control: hasta cuándo el bot está callado en esta conversación (UTC)
+    bot_pausado_hasta: datetime | None = None
 
 
 class ResponderRequest(BaseModel):
     texto: str = Field(min_length=1, max_length=4000)
+
+
+class PausaBotRequest(BaseModel):
+    pausado: bool
+    horas: float | None = Field(default=None, gt=0, le=24 * 30, description="Por defecto PAUSA_BOT_MANUAL_HORAS")

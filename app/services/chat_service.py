@@ -8,9 +8,15 @@ RF-08), sin importar por dónde llegó:
 Así ambos canales usan exactamente el mismo prompt, la misma IA y quedan
 guardados en el mismo historial que muestra el Dashboard.
 """
+import time as time_mod
 from datetime import datetime, timedelta
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+
+from app.core import config
+from app.core.tiempo import ahora_utc
+from app.models.seguridad import EventoWhatsapp
 
 from app.models.negocio import Negocio
 from app.models.contexto_ia import ContextoIA
@@ -51,13 +57,112 @@ def obtener_o_crear_conversacion_abierta(db: Session, id_cliente: int, id_negoci
     return conversacion
 
 
-def procesar_respuesta_confirmacion(
-    db: Session, negocio: Negocio, telefono_cliente: str, texto_mensaje: str
-) -> str | None:
-    """Si a este número se le pidió confirmar su cita (mensaje de 1 hora
-    antes) y responde SÍ o NO, se aplica sin pasar por la IA. Funciona
-    aunque el bot esté pausado: es parte del flujo de la agenda.
-    Devuelve el texto de respuesta, o None si el mensaje no era eso."""
+RESPUESTA_NO_TEXTO = (
+    "Por ahora solo puedo leer mensajes de texto 🙏 ¿Me lo escribes? "
+    "Si prefieres, alguien del equipo lo revisa a la brevedad."
+)
+DIAS_EVENTOS_WHATSAPP = 7
+
+
+# ---------------------------------------------------- reenvíos de Meta
+
+def registrar_evento(db: Session, wamid: str | None) -> bool:
+    """Marca el mensaje de WhatsApp como recibido. False si ya se había
+    recibido (Meta lo reenvió porque el webhook tardó): hay que descartarlo."""
+    if not wamid:
+        return True
+    db.add(EventoWhatsapp(wamid=wamid[:200]))
+    try:
+        db.commit()
+        return True
+    except IntegrityError:
+        db.rollback()
+        return False
+
+
+def olvidar_evento(db: Session, wamid: str | None) -> None:
+    """Si el procesamiento falló, se borra la marca para que el reintento de
+    Meta sí se procese."""
+    if not wamid:
+        return
+    db.rollback()
+    db.query(EventoWhatsapp).filter(EventoWhatsapp.wamid == wamid[:200]).delete()
+    db.commit()
+
+
+def limpiar_eventos_antiguos(db: Session) -> int:
+    limite = ahora_utc() - timedelta(days=DIAS_EVENTOS_WHATSAPP)
+    borrados = db.query(EventoWhatsapp).filter(EventoWhatsapp.fecha < limite).delete()
+    db.commit()
+    return borrados
+
+
+# ------------------------------------------- tomar el control (pausa por conversación)
+
+def _pausada(conversacion: Conversacion) -> bool:
+    return bool(conversacion.bot_pausado_hasta and conversacion.bot_pausado_hasta > ahora_utc())
+
+
+def pausar_bot_en_conversacion(db: Session, conversacion: Conversacion, horas: float | None = None) -> None:
+    conversacion.bot_pausado_hasta = ahora_utc() + timedelta(hours=horas or config.PAUSA_BOT_MANUAL_HORAS)
+    db.commit()
+
+
+def reactivar_bot_en_conversacion(db: Session, conversacion: Conversacion) -> None:
+    conversacion.bot_pausado_hasta = None
+    db.commit()
+
+
+def conversacion_en_pausa(db: Session, negocio: Negocio, telefono_cliente: str) -> bool:
+    """True si el dueño tomó el control de la conversación con este cliente."""
+    cliente = obtener_o_crear_cliente(db, telefono_cliente)
+    conversacion = obtener_o_crear_conversacion_abierta(db, cliente.id_cliente, negocio.id_negocio)
+    return _pausada(conversacion)
+
+
+def _avisar_mensaje_en_pausa(db: Session, negocio: Negocio, cliente) -> None:
+    """Un aviso por cliente mientras no se lea."""
+    quien = cliente.nombre_cliente or cliente.telefono
+    texto = f"💬 {quien} te escribió. El bot está en pausa en esa conversación: respóndele desde Conversaciones."
+    ya_existe = (
+        db.query(Aviso.id_aviso)
+        .filter(Aviso.id_negocio == negocio.id_negocio, Aviso.leido.is_(False), Aviso.texto == texto)
+        .first()
+    )
+    if ya_existe is None:
+        recordatorios.crear_aviso(db, negocio.id_negocio, "mensaje_en_pausa", texto)
+
+
+# ------------------------------------------------------------- helpers
+
+def _ms_desde(inicio: float | None) -> int | None:
+    return int((time_mod.monotonic() - inicio) * 1000) if inicio is not None else None
+
+
+def _guardar_respuesta(db: Session, id_conversacion: int, texto: str, origen: str, inicio: float | None) -> Mensaje:
+    mensaje = Mensaje(
+        id_conversacion=id_conversacion, emisor="bot", contenido=texto,
+        origen_respuesta=origen, latencia_ms=_ms_desde(inicio),
+    )
+    db.add(mensaje)
+    db.commit()
+    db.refresh(mensaje)
+    return mensaje
+
+
+def completar_latencia(db: Session, mensaje: Mensaje | None, inicio: float | None) -> None:
+    """Después de enviar por WhatsApp: la latencia de la respuesta incluye el envío (RNF-01)."""
+    if mensaje is None or inicio is None:
+        return
+    mensaje.latencia_ms = _ms_desde(inicio)
+    db.commit()
+
+
+# ------------------------------------------------------------- flujos
+
+def procesar_respuesta_confirmacion_detalle(
+    db: Session, negocio: Negocio, telefono_cliente: str, texto_mensaje: str, inicio: float | None = None
+) -> tuple[str, Mensaje] | None:
     cita = recordatorios.cita_esperando_respuesta(db, negocio, telefono_cliente)
     if cita is None:
         return None
@@ -71,18 +176,45 @@ def procesar_respuesta_confirmacion(
     db.commit()
 
     texto_respuesta = recordatorios.registrar_respuesta(db, negocio, cita, respuesta)
-    db.add(Mensaje(id_conversacion=conversacion.id_conversacion, emisor="bot", contenido=texto_respuesta))
-    db.commit()
-    return texto_respuesta
+    mensaje = _guardar_respuesta(db, conversacion.id_conversacion, texto_respuesta, "confirmacion", inicio)
+    return texto_respuesta, mensaje
 
 
-def guardar_mensaje_sin_respuesta(db: Session, negocio: Negocio, telefono_cliente: str, texto_mensaje: str) -> None:
-    """Con el bot pausado, el mensaje igual queda en Conversaciones para que
-    el negocio pueda responderlo a mano desde el Dashboard."""
+def procesar_respuesta_confirmacion(
+    db: Session, negocio: Negocio, telefono_cliente: str, texto_mensaje: str
+) -> str | None:
+    """Si a este número se le pidió confirmar su cita (mensaje de 1 hora
+    antes) y responde SÍ o NO, se aplica sin pasar por la IA. Funciona
+    aunque el bot esté pausado: es parte del flujo de la agenda.
+    Devuelve el texto de respuesta, o None si el mensaje no era eso."""
+    resultado = procesar_respuesta_confirmacion_detalle(db, negocio, telefono_cliente, texto_mensaje)
+    return resultado[0] if resultado else None
+
+
+def guardar_mensaje_sin_respuesta(
+    db: Session, negocio: Negocio, telefono_cliente: str, texto_mensaje: str, tipo: str = "texto"
+) -> None:
+    """Con el bot pausado (en todo el negocio o solo en esta conversación),
+    el mensaje igual queda en Conversaciones para responderlo a mano."""
     cliente = obtener_o_crear_cliente(db, telefono_cliente)
     conversacion = obtener_o_crear_conversacion_abierta(db, cliente.id_cliente, negocio.id_negocio)
-    db.add(Mensaje(id_conversacion=conversacion.id_conversacion, emisor="cliente", contenido=texto_mensaje))
+    db.add(Mensaje(id_conversacion=conversacion.id_conversacion, emisor="cliente", contenido=texto_mensaje, tipo_mensaje=tipo))
     db.commit()
+    if _pausada(conversacion):
+        _avisar_mensaje_en_pausa(db, negocio, cliente)
+
+
+def procesar_no_texto(
+    db: Session, negocio: Negocio, telefono_cliente: str, descripcion: str, tipo: str, inicio: float | None = None
+) -> tuple[str, Mensaje]:
+    """Audio, foto, sticker, etc.: se guarda en Conversaciones y se le pide
+    al cliente que escriba (la IA solo procesa texto)."""
+    cliente = obtener_o_crear_cliente(db, telefono_cliente)
+    conversacion = obtener_o_crear_conversacion_abierta(db, cliente.id_cliente, negocio.id_negocio)
+    db.add(Mensaje(id_conversacion=conversacion.id_conversacion, emisor="cliente", contenido=descripcion, tipo_mensaje=tipo[:20]))
+    db.commit()
+    mensaje = _guardar_respuesta(db, conversacion.id_conversacion, RESPUESTA_NO_TEXTO, "no_texto", inicio)
+    return RESPUESTA_NO_TEXTO, mensaje
 
 
 def _cambiar_contacto_sin_ia(db, negocio, cliente, catalogo, texto_mensaje) -> str | None:
@@ -229,6 +361,14 @@ def procesar_mensaje(db: Session, negocio: Negocio, telefono_cliente: str, texto
 
     No envía nada: cada canal (webhook o puente) se encarga de despachar
     la respuesta por su propio medio."""
+    return procesar_mensaje_detalle(db, negocio, telefono_cliente, texto_mensaje)[0]
+
+
+def procesar_mensaje_detalle(
+    db: Session, negocio: Negocio, telefono_cliente: str, texto_mensaje: str, inicio: float | None = None
+) -> tuple[str, Mensaje]:
+    """Igual que procesar_mensaje, pero devuelve también el mensaje guardado
+    (para completar su latencia después de enviarlo)."""
     cliente = obtener_o_crear_cliente(db, telefono_cliente)
     conversacion = obtener_o_crear_conversacion_abierta(db, cliente.id_cliente, negocio.id_negocio)
 
@@ -311,6 +451,7 @@ def procesar_mensaje(db: Session, negocio: Negocio, telefono_cliente: str, texto
         model=contexto.ai_model if contexto else None,
     )
 
+    origen = "ia" if respuesta is not None else "sin_ia"
     if respuesta is None:
         # Ningún modelo respondió. 1) Si ya tiene hora y manda un teléfono o
         # correo nuevo, se actualizan los datos de los recordatorios.
@@ -359,7 +500,5 @@ def procesar_mensaje(db: Session, negocio: Negocio, telefono_cliente: str, texto
         respuesta = texto_ia or "¿Para qué día y hora te gustaría agendar? Un miembro del equipo te confirmará."
 
     # RF-05: guardar la respuesta del bot en el historial
-    db.add(Mensaje(id_conversacion=conversacion.id_conversacion, emisor="bot", contenido=respuesta))
-    db.commit()
-
-    return respuesta
+    mensaje = _guardar_respuesta(db, conversacion.id_conversacion, respuesta, origen, inicio)
+    return respuesta, mensaje

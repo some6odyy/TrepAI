@@ -31,7 +31,9 @@ async function apiFetch(path, options = {}) {
     throw new Error('No se pudo conectar con el servidor. ¿Está corriendo el backend?');
   }
 
-  if (respuesta.status === 401) {
+  // 401 con sesión abierta = la sesión venció. Sin token (ej. contraseña
+  // incorrecta al iniciar sesión) se muestra el mensaje del backend.
+  if (respuesta.status === 401 && token && !path.startsWith('/auth/login')) {
     Auth.clearToken();
     mostrarPantallaLogin();
     throw new Error('Tu sesión expiró, inicia sesión de nuevo');
@@ -44,7 +46,7 @@ async function apiFetch(path, options = {}) {
       if (data.detail) {
         detalle = typeof data.detail === 'string'
           ? data.detail
-          : data.detail.map((d) => d.msg).join(', ');
+          : data.detail.map((d) => String(d.msg).replace(/^Value error, /, '')).join(', ');
       }
     } catch (_) { /* el cuerpo no era JSON */ }
     throw new Error(detalle);
@@ -58,6 +60,8 @@ const api = {
   registrar: (datos) => apiFetch('/auth/registro', { method: 'POST', body: datos }),
   login: (datos) => apiFetch('/auth/login', { method: 'POST', body: datos }),
   yo: () => apiFetch('/auth/yo'),
+  actualizarCuenta: (datos) => apiFetch('/auth/yo', { method: 'PUT', body: datos }),
+  cambiarContrasena: (datos) => apiFetch('/auth/cambiar-contrasena', { method: 'POST', body: datos }),
 
   listarNegocios: () => apiFetch('/negocio'),
   crearNegocio: (datos) => apiFetch('/negocio', { method: 'POST', body: datos }),
@@ -86,11 +90,25 @@ const api = {
   actualizarEstadoCita: (id, idAgenda, estado) =>
     apiFetch(`/negocio/${id}/agenda/${idAgenda}/estado`, { method: 'PATCH', body: { estado_cita: estado } }),
   eliminarCita: (id, idAgenda) => apiFetch(`/negocio/${id}/agenda/${idAgenda}`, { method: 'DELETE' }),
+  editarCita: (id, idAgenda, datos) => apiFetch(`/negocio/${id}/agenda/${idAgenda}`, { method: 'PUT', body: datos }),
+
+  listarBloqueos: (id) => apiFetch(`/negocio/${id}/bloqueos`),
+  crearBloqueo: (id, datos) => apiFetch(`/negocio/${id}/bloqueos`, { method: 'POST', body: datos }),
+  eliminarBloqueo: (id, idBloqueo) => apiFetch(`/negocio/${id}/bloqueos/${idBloqueo}`, { method: 'DELETE' }),
+
+  listarClientes: (id) => apiFetch(`/negocio/${id}/clientes`),
+  obtenerCliente: (id, idCliente) => apiFetch(`/negocio/${id}/clientes/${idCliente}`),
+  guardarNotasCliente: (id, idCliente, notas) =>
+    apiFetch(`/negocio/${id}/clientes/${idCliente}/notas`, { method: 'PUT', body: { notas } }),
+
+  tiempoRespuesta: (id, dias = 7) => apiFetch(`/negocio/${id}/tiempo-respuesta?dias=${dias}`),
 
   listarConversaciones: (id) => apiFetch(`/negocio/${id}/conversaciones`),
   listarMensajes: (id, idConversacion) => apiFetch(`/negocio/${id}/conversaciones/${idConversacion}/mensajes`),
   responderConversacion: (id, idConversacion, texto) =>
     apiFetch(`/negocio/${id}/conversaciones/${idConversacion}/mensajes`, { method: 'POST', body: { texto } }),
+  pausarBotConversacion: (id, idConversacion, pausado, horas = null) =>
+    apiFetch(`/negocio/${id}/conversaciones/${idConversacion}/bot`, { method: 'PUT', body: { pausado, horas } }),
 
   probarIa: (id) => apiFetch(`/negocio/${id}/contexto/probar-ia`, { method: 'POST' }),
   novedades: (id) => apiFetch(`/negocio/${id}/novedades`),

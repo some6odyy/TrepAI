@@ -80,14 +80,16 @@ Con el backend corriendo en otra terminal:
 python tests/smoke_test.py
 ```
 
-Pruebas sin servidor (usan una BD SQLite temporal):
+Pruebas sin servidor (cada archivo usa su propia BD SQLite temporal):
 
 ```bash
-PYTHONPATH=. python tests/test_agenda_bloqueo.py
-PYTHONPATH=. python tests/test_agendado_ia.py
-PYTHONPATH=. python tests/test_horario.py
-PYTHONPATH=. python tests/test_recordatorios.py
+pip install -r requirements-dev.txt
+pytest            # todas juntas
+pytest tests/test_mejoras_finales.py   # o un archivo
 ```
+
+En GitHub, `.github/workflows/pruebas.yml` corre `pytest` y la prueba
+end-to-end en cada push: si algo se rompe, el commit queda con una ❌.
 
 Recorre el journey completo con datos realistas de Silvabarber: registro,
 negocio, catálogo, contexto, conexión WhatsApp, bot encendido, mensaje
@@ -198,6 +200,42 @@ Los logs de Vercel muestran el motivo de cada falla (ej. `respondió 429: ...`).
   recarga Agenda o Conversaciones solo si cambiaron. Los avisos (nueva cita,
   cita en 1 hora, cliente confirmó/canceló) aparecen en la campana.
 
+## Seguridad del webhook y conversaciones atendidas a mano
+
+- **Firma de Meta:** con `META_APP_SECRET` definido, el webhook rechaza (403)
+  todo evento sin la cabecera `X-Hub-Signature-256` correcta. Sin la
+  variable no se verifica (solo para desarrollo local).
+- **Reenvíos:** si el webhook tarda (la IA puede demorar hasta 15 s), Meta
+  vuelve a mandar el mismo mensaje. Cada `wamid` se guarda en la tabla
+  `evento_whatsapp` y los repetidos se descartan, así el bot no contesta ni
+  agenda dos veces. El cron borra los de más de 7 días.
+- **Audios, fotos, stickers...:** quedan en Conversaciones (ej. `[🎤 Audio]`)
+  y el bot le pide al cliente que escriba. Las reacciones se ignoran.
+- **Límite de intentos:** 5 logins fallidos por correo (o 20 por IP) en
+  15 minutos bloquean hasta que pase la ventana. La recuperación de
+  contraseña envía como máximo 3 correos por hora a una cuenta y acepta 10
+  solicitudes por hora desde una IP.
+- **Tomar el control:** cuando respondes desde Conversaciones, el bot se
+  calla en esa conversación por `PAUSA_BOT_MANUAL_HORAS` horas. En el chat
+  puedes pausarlo o reactivarlo cuando quieras; si el cliente escribe
+  mientras está en pausa, te llega un aviso.
+
+## Agenda: bloqueos, edición y Clientes
+
+- **Bloquear horario** (Agenda): días completos (vacaciones, feriados), unas
+  horas de un día o un tramo todas las semanas (almuerzo). Ni el
+  formulario ni el bot pueden agendar ahí; el bot le dice el motivo al
+  cliente y le ofrece otras horas.
+- **Editar cita:** servicio, día, hora y datos de contacto, con las mismas
+  validaciones que al agendar. Si cambia la hora, el cliente recibe el
+  aviso con la hora nueva y los recordatorios se reprograman.
+- **Clientes:** una ficha por cliente con sus citas, atendidas,
+  inasistencias (estado "No asistió"), próxima cita y notas privadas.
+- **Mi cuenta:** cambiar nombre, correo (pide la contraseña actual) y contraseña.
+- **Tiempo de respuesta (RNF-01):** cada respuesta del bot guarda cuánto
+  tardó, y el Resumen muestra el promedio y el % bajo 15 s de los últimos 7
+  días (`GET /negocio/{id}/tiempo-respuesta`).
+
 ## Mapeo requerimiento -> archivo
 
 | RF/RNF | Dónde vive |
@@ -295,9 +333,11 @@ derecha):
 | `GEMINI_MODEL` | `gemini-3.6-flash` (si usas Gemini) |
 | `OPENAI_MODEL` | `gpt-5.4-mini` (si usas OpenAI) |
 | `CORS_ALLOWED_ORIGINS` | `*` para partir; después de desplegar, cámbialo a tu dominio real de Vercel |
+| `META_APP_SECRET` | La clave secreta de la app de Meta (App settings → Basic → App secret). Con ella se verifica que cada evento del webhook venga de Meta |
+| `PAUSA_BOT_MANUAL_HORAS` | Opcional (por defecto `2`): horas que el bot se calla en una conversación después de que respondes a mano |
 
 Dale **Deploy**. La primera vez que la función arranque, SQLAlchemy va a
-crear las 8 tablas automáticamente en tu base Neon (mismo mecanismo que
+crear las tablas automáticamente en tu base Neon (mismo mecanismo que
 en local, solo que ahora apunta a Postgres).
 
 ### 5. Conseguir la API key del motor de IA

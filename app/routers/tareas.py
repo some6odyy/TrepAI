@@ -31,4 +31,9 @@ def _verificar_cron(authorization: str = Header(default=""), x_cron_token: str =
 
 @router.api_route("/recordatorios", methods=["GET", "POST"], dependencies=[Depends(_verificar_cron)])
 def ejecutar_recordatorios(db: Session = Depends(get_db)):
-    return {"ok": True, **recordatorios.ejecutar_pendientes(db)}
+    resultado = recordatorios.ejecutar_pendientes(db)
+    # Limpieza: IDs de mensajes de WhatsApp e intentos de acceso antiguos
+    from app.services import chat_service, limite_intentos
+    chat_service.limpiar_eventos_antiguos(db)
+    limite_intentos.limpiar_antiguos(db)
+    return {"ok": True, **resultado}

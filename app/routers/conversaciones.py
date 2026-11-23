@@ -15,8 +15,8 @@ from app.models.cliente import Cliente
 from app.models.agenda import Agenda
 from app.models.servicio import Servicio
 from app.core.tiempo import ahora_utc
-from app.schemas.conversacion import ConversacionResponse, MensajeResponse, ResponderRequest
-from app.services import recordatorios, whatsapp_service
+from app.schemas.conversacion import ConversacionResponse, MensajeResponse, PausaBotRequest, ResponderRequest
+from app.services import chat_service, recordatorios, whatsapp_service
 
 router = APIRouter(prefix="/negocio/{id_negocio}/conversaciones", tags=["Historial"])
 
@@ -74,6 +74,11 @@ def listar_conversaciones(
             puede_responder=bool(
                 ultimos_cliente.get(conversacion.id_conversacion)
                 and ultimos_cliente[conversacion.id_conversacion] >= limite_ventana
+            ),
+            bot_pausado_hasta=(
+                conversacion.bot_pausado_hasta
+                if conversacion.bot_pausado_hasta and conversacion.bot_pausado_hasta > ahora_utc()
+                else None
             ),
         )
         for conversacion, cliente, total_mensajes, ultima in resultados
@@ -154,4 +159,30 @@ def responder_conversacion(
     db.add(mensaje)
     db.commit()
     db.refresh(mensaje)
+    # Tomar el control: el dueño está atendiendo esta conversación, así que
+    # el bot se calla en ella por un rato (se puede reactivar desde el chat).
+    chat_service.pausar_bot_en_conversacion(db, conversacion)
     return mensaje
+
+
+@router.put("/{id_conversacion}/bot", response_model=ConversacionResponse)
+def pausar_o_reactivar_bot(
+    id_conversacion: int,
+    datos: PausaBotRequest,
+    db: Session = Depends(get_db),
+    negocio: Negocio = Depends(obtener_negocio_propio),
+):
+    """Pausa el bot solo en esta conversación (el dueño la atiende a mano)
+    o lo reactiva."""
+    conversacion = (
+        db.query(Conversacion)
+        .filter(Conversacion.id_conversacion == id_conversacion, Conversacion.id_negocio == negocio.id_negocio)
+        .first()
+    )
+    if conversacion is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversación no encontrada")
+    if datos.pausado:
+        chat_service.pausar_bot_en_conversacion(db, conversacion, datos.horas)
+    else:
+        chat_service.reactivar_bot_en_conversacion(db, conversacion)
+    return next(c for c in listar_conversaciones(db, negocio) if c.id_conversacion == id_conversacion)

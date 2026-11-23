@@ -18,7 +18,7 @@ from app.services.agenda_service import (
 )
 from app.services import recordatorios
 from app.services.horario_service import FueraDeHorarioError, validar_dentro_de_horario
-from app.schemas.agenda import CitaCreate, CitaEstadoUpdate, CitaResponse
+from app.schemas.agenda import CitaCreate, CitaEstadoUpdate, CitaResponse, CitaUpdate
 
 router = APIRouter(prefix="/negocio/{id_negocio}/agenda", tags=["Agenda"])
 
@@ -121,6 +121,89 @@ def _obtener_cita_propia(id_agenda: int, db: Session, negocio: Negocio) -> tuple
     if resultado is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cita no encontrada")
     return resultado
+
+
+@router.put("/{id_agenda}", response_model=CitaResponse)
+def editar_cita(
+    id_agenda: int,
+    datos: CitaUpdate,
+    db: Session = Depends(get_db),
+    negocio: Negocio = Depends(obtener_negocio_propio),
+):
+    """Editar una cita desde la Agenda: servicio, día, hora y datos de
+    contacto. Si cambia el día o la hora se revisan las mismas reglas que al
+    agendar (horario de atención, bloqueos, choque con otras citas y 2 horas
+    de anticipación) y el cliente recibe el aviso con la hora nueva."""
+    agenda_service.liberar_pendientes_vencidas(db, negocio.id_negocio)
+    cita, cliente, servicio = _obtener_cita_propia(id_agenda, db, negocio)
+
+    servicio_nuevo = servicio
+    if datos.id_servicio is not None and datos.id_servicio != servicio.id_servicio:
+        servicio_nuevo = (
+            db.query(Servicio)
+            .filter(Servicio.id_servicio == datos.id_servicio, Servicio.id_negocio == negocio.id_negocio)
+            .first()
+        )
+        if servicio_nuevo is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ese servicio no existe en este negocio")
+    fecha = datos.fecha_cita or cita.fecha_cita
+    hora = (datos.hora_cita or cita.hora_cita).replace(second=0, microsecond=0)
+    cambia_momento = fecha != cita.fecha_cita or hora != cita.hora_cita.replace(second=0, microsecond=0)
+    cambia_horario = cambia_momento or servicio_nuevo.id_servicio != servicio.id_servicio
+
+    # Datos de contacto (a ellos llegan los recordatorios)
+    invalidos = []
+    correo = telefono = None
+    if datos.correo_cliente is not None:
+        correo = agenda_service.normalizar_correo(datos.correo_cliente)
+        if correo is None:
+            invalidos.append("correo")
+    if datos.telefono_contacto is not None:
+        telefono = agenda_service.normalizar_telefono(datos.telefono_contacto)
+        if telefono is None:
+            invalidos.append("teléfono")
+    if invalidos:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(DatosContactoError([], invalidos)),
+        )
+
+    if cambia_horario and cita.estado_cita in agenda_service.ESTADOS_QUE_BLOQUEAN:
+        duracion = agenda_service.duracion_minutos(servicio_nuevo)
+        try:
+            if cambia_momento:
+                agenda_service.validar_anticipacion(fecha, hora)
+            validar_dentro_de_horario(negocio.horario, fecha, hora, duracion)
+            agenda_service.validar_horario_libre(
+                db, negocio.id_negocio, fecha, hora, duracion, excluir_id_agenda=cita.id_agenda
+            )
+        except (FueraDeHorarioError, AnticipacionInsuficienteError) as error:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error))
+        except HorarioOcupadoError as error:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error))
+
+    cita.id_servicio = servicio_nuevo.id_servicio
+    cita.fecha_cita = fecha
+    cita.hora_cita = hora
+    if datos.nombre_cliente is not None:
+        cita.nombre_contacto = " ".join(datos.nombre_cliente.split())
+    if correo:
+        cita.correo_contacto = correo
+    if telefono:
+        cita.telefono_contacto = telefono
+    if cambia_momento:
+        # Hora nueva = avisos nuevos (el cliente recibe la hora actualizada)
+        cita.aviso_reserva_enviado = None
+        cita.recordatorio_24h_enviado = None
+        cita.confirmacion_1h_enviada = None
+        cita.respuesta_cliente = None
+    db.commit()
+    db.refresh(cita)
+
+    if cambia_momento and cita.estado_cita in ("pendiente", "confirmada"):
+        recordatorios.procesar_cita(db, negocio, cita.id_agenda)
+        db.refresh(cita)
+    return _a_response(cita, cliente, servicio_nuevo)
 
 
 @router.patch("/{id_agenda}/estado", response_model=CitaResponse)

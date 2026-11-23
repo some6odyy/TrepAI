@@ -86,5 +86,9 @@ def recibir_mensaje_puente(datos: MensajePuente, db: Session = Depends(get_db)):
         if not negocio.estado_bot:
             chat_service.guardar_mensaje_sin_respuesta(db, negocio, telefono, texto)
             return {"status": "bot_inactivo", "respuesta": None}
+        # El dueño tomó el control de esta conversación desde el Dashboard
+        if chat_service.conversacion_en_pausa(db, negocio, telefono):
+            chat_service.guardar_mensaje_sin_respuesta(db, negocio, telefono, texto)
+            return {"status": "conversacion_en_pausa", "respuesta": None}
         respuesta = chat_service.procesar_mensaje(db, negocio, telefono, texto)
     return {"status": "procesado", "respuesta": respuesta}

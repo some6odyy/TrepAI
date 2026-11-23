@@ -17,6 +17,10 @@ const estado = {
   ultimoAvisoVisto: 0,
   idsCitasConocidas: new Set(),
   mensajesActivos: 0,
+  citaEditando: null,
+  bloqueos: [],
+  clientes: [],
+  fichaActiva: null,
 };
 
 /* ---------------------------- Utilidades UI ---------------------------- */
@@ -161,6 +165,8 @@ function cambiarVista(nombreVista) {
   if (nombreVista === 'contexto') cargarContexto();
   if (nombreVista === 'agenda') cargarAgenda();
   if (nombreVista === 'historial') cargarConversaciones();
+  if (nombreVista === 'clientes') cargarClientes();
+  if (nombreVista === 'cuenta') rellenarCuenta();
 }
 
 function capitalizar(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
@@ -286,6 +292,24 @@ async function cargarEstadisticasResumen() {
   } catch (error) {
     console.warn('No se pudieron cargar las estadísticas del resumen:', error.message);
   }
+  cargarTiempoRespuesta();
+}
+
+// RNF-01: cuánto tarda el bot en responder (últimos 7 días)
+async function cargarTiempoRespuesta() {
+  try {
+    const t = await api.tiempoRespuesta(estado.negocio.id_negocio, 7);
+    const segundos = (v) => `${String(v).replace('.', ',')} s`;
+    if (!t.total) {
+      $('statLatencia').textContent = '—';
+      $('statLatenciaSub').textContent = 'Sin respuestas en 7 días';
+      return;
+    }
+    $('statLatencia').textContent = segundos(t.promedio_s);
+    $('statLatenciaSub').textContent = `${String(t.dentro_del_limite_pct).replace('.', ',')} % bajo ${t.limite_s} s · ${t.total} resp.`;
+    $('statLatencia').closest('.stat-card').title =
+      `Promedio ${segundos(t.promedio_s)} · 95 % en menos de ${segundos(t.p95_s)} · máximo ${segundos(t.maximo_s)} (últimos ${t.dias} días)`;
+  } catch (_) { /* el resto del resumen funciona igual */ }
 }
 
 /* ------------------------------ Navegación ------------------------------- */
@@ -732,7 +756,11 @@ document.getElementById('formServicio').addEventListener('submit', (e) => {
 
 /* ---------------------------------- Agenda ---------------------------------- */
 
-const ESTADOS_CITA = ['pendiente', 'confirmada', 'completada', 'cancelada', 'expirada'];
+const ESTADOS_CITA = ['pendiente', 'confirmada', 'completada', 'no_asistio', 'cancelada', 'expirada'];
+const ETIQUETA_ESTADO = {
+  pendiente: 'Pendiente', confirmada: 'Confirmada', completada: 'Completada',
+  no_asistio: 'No asistió', cancelada: 'Cancelada', expirada: 'Expirada',
+};
 
 function badgesNotificacion(c) {
   const b = [];
@@ -757,6 +785,7 @@ async function cargarAgenda() {
   } catch (error) {
     mostrarToast(error.message, 'error');
   }
+  cargarBloqueos();
 }
 
 function renderizarAgenda() {
@@ -808,9 +837,12 @@ function renderizarAgenda() {
                 ${badgesNotificacion(c)}
               </div>
               <select class="status-select st-${c.estado_cita}" data-cambiar-estado="${c.id_agenda}" aria-label="Estado de la cita">
-                ${ESTADOS_CITA.map((e) => `<option value="${e}" ${e === c.estado_cita ? 'selected' : ''}>${e}</option>`).join('')}
+                ${ESTADOS_CITA.map((e) => `<option value="${e}" ${e === c.estado_cita ? 'selected' : ''}>${ETIQUETA_ESTADO[e]}</option>`).join('')}
               </select>
-              <button class="icon-btn danger" data-eliminar-cita="${c.id_agenda}" title="Eliminar">${icono('trash')}</button>
+              <span class="acciones">
+                <button class="icon-btn" data-editar-cita="${c.id_agenda}" title="Editar">${icono('edit')}</button>
+                <button class="icon-btn danger" data-eliminar-cita="${c.id_agenda}" title="Eliminar">${icono('trash')}</button>
+              </span>
             </article>`).join('')}
         </div>
       </div>`;
@@ -826,6 +858,13 @@ function renderizarAgenda() {
         mostrarToast(error.message, 'error');
         cargarAgenda();
       }
+    });
+  });
+
+  $$('[data-editar-cita]', cont).forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const cita = estado.citas.find((c) => String(c.id_agenda) === btn.dataset.editarCita);
+      if (cita) abrirDrawer(cita);
     });
   });
 
@@ -856,25 +895,64 @@ $('filtroFecha').addEventListener('change', cargarAgenda);
 $('btnHoy').addEventListener('click', () => { $('filtroFecha').value = fechaLocalISO(); cargarAgenda(); });
 $('btnLimpiarFecha').addEventListener('click', () => { $('filtroFecha').value = ''; cargarAgenda(); });
 
-function abrirDrawer() {
+// El mismo panel sirve para agendar (cita = null) y para editar una cita
+function abrirDrawer(cita = null) {
+  estado.citaEditando = cita;
+  $('formCita').reset();
+  actualizarSelectServicios();
+  $('drawerTitulo').textContent = cita ? 'Editar cita' : 'Agendar manualmente';
+  $('btnGuardarCita').textContent = cita ? 'Guardar cambios' : 'Agendar cita';
+  $('citaHint').textContent = cita
+    ? 'Si cambias el día o la hora, el cliente recibe un aviso con la hora nueva y los recordatorios se reprograman.'
+    : 'Se agenda con al menos 2 horas de anticipación. El cliente recibirá un aviso al agendar, un recordatorio el día antes y un mensaje para confirmar 1 hora antes.';
+  if (cita) {
+    $('citaNombre').value = cita.nombre_cliente || '';
+    $('citaCorreo').value = cita.correo_cliente || '';
+    $('citaTelefono').value = formatoTelefono(cita.telefono_contacto || cita.telefono_cliente);
+    $('citaServicio').value = String(cita.id_servicio);
+    $('citaFecha').value = cita.fecha_cita;
+    $('citaHora').value = cita.hora_cita.slice(0, 5);
+  } else {
+    $('citaFecha').value = $('filtroFecha').value || fechaLocalISO();
+  }
   $('drawerCita').classList.add('open');
-  if (!$('citaFecha').value) $('citaFecha').value = $('filtroFecha').value || fechaLocalISO();
   setTimeout(() => $('citaNombre').focus(), 200);
 }
 
-function cerrarDrawer() { $('drawerCita').classList.remove('open'); }
+function cerrarDrawer(id = null) {
+  $$(id ? `#${id}` : '.drawer-backdrop').forEach((d) => d.classList.remove('open'));
+}
 
-$('btnNuevaCita').addEventListener('click', abrirDrawer);
-$$('[data-close-drawer]').forEach((b) => b.addEventListener('click', cerrarDrawer));
-$('drawerCita').addEventListener('click', (e) => { if (e.target.id === 'drawerCita') cerrarDrawer(); });
+$('btnNuevaCita').addEventListener('click', () => abrirDrawer());
+$$('[data-close-drawer]').forEach((b) => b.addEventListener('click', () => cerrarDrawer(b.closest('.drawer-backdrop').id)));
+$$('.drawer-backdrop').forEach((d) => d.addEventListener('click', (e) => { if (e.target === d) cerrarDrawer(d.id); }));
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') cerrarDrawer(); });
 
 $('formCita').addEventListener('submit', (e) => {
   e.preventDefault();
+  const editando = estado.citaEditando;
+  const horaForm = $('citaHora').value;
+  const cambiaMomento = !editando || editando.fecha_cita !== $('citaFecha').value || editando.hora_cita.slice(0, 5) !== horaForm;
   // Misma regla que el backend: al menos 2 horas de anticipación
-  const inicio = new Date(`${$('citaFecha').value}T${$('citaHora').value}`);
-  if (inicio.getTime() < Date.now() + 2 * 60 * 60 * 1000) {
+  const inicio = new Date(`${$('citaFecha').value}T${horaForm}`);
+  if (cambiaMomento && inicio.getTime() < Date.now() + 2 * 60 * 60 * 1000) {
     mostrarToast('Las citas se agendan con al menos 2 horas de anticipación', 'error');
+    return;
+  }
+  if (editando) {
+    manejarEnvio(e.target, async () => {
+      await api.editarCita(estado.negocio.id_negocio, editando.id_agenda, {
+        nombre_cliente: $('citaNombre').value.trim(),
+        correo_cliente: $('citaCorreo').value.trim(),
+        telefono_contacto: $('citaTelefono').value.trim(),
+        id_servicio: Number($('citaServicio').value),
+        fecha_cita: $('citaFecha').value,
+        hora_cita: horaForm,
+      });
+      cerrarDrawer('drawerCita');
+      await cargarAgenda();
+      mostrarToast(cambiaMomento ? 'Cita actualizada: se le avisó al cliente la hora nueva' : 'Cita actualizada');
+    });
     return;
   }
   manejarEnvio(e.target, async () => {
@@ -887,10 +965,102 @@ $('formCita').addEventListener('submit', (e) => {
       hora_cita: $('citaHora').value,
     });
     e.target.reset();
-    cerrarDrawer();
+    cerrarDrawer('drawerCita');
     await cargarAgenda();
     mostrarToast('Cita agendada');
     cargarEstadisticasResumen();
+  });
+});
+
+/* ------------------------- Agenda: bloquear horarios ------------------------- */
+
+async function cargarBloqueos() {
+  try {
+    estado.bloqueos = await api.listarBloqueos(estado.negocio.id_negocio);
+  } catch (error) {
+    estado.bloqueos = [];
+  }
+  renderizarBloqueos();
+}
+
+function renderizarBloqueos() {
+  const lista = estado.bloqueos || [];
+  const strip = $('bloqueosStrip');
+  strip.classList.toggle('hidden', lista.length === 0);
+  strip.innerHTML = lista.length === 0 ? '' : `<span>Bloqueado:</span>` + lista.map((b) => `
+      <button class="bloqueo-chip" type="button" data-abrir-bloqueos title="${escapeHtml(b.descripcion)}">
+        ${icono('block')}${escapeHtml(b.motivo || 'Sin motivo')} · ${escapeHtml(b.descripcion)}
+      </button>`).join('');
+  $$('[data-abrir-bloqueos]', strip).forEach((b) => b.addEventListener('click', abrirBloqueos));
+
+  $('listaBloqueos').innerHTML = lista.length === 0
+    ? '<div class="vacio-chico">No hay horarios bloqueados.</div>'
+    : lista.map((b) => `
+      <div class="bloqueo-item">
+        <div>
+          <b>${escapeHtml(b.motivo || 'Sin motivo')}</b>
+          <small>${escapeHtml(b.descripcion)}</small>
+          ${b.citas_afectadas ? `<small class="aviso-citas">${b.citas_afectadas} cita${b.citas_afectadas === 1 ? '' : 's'} agendada${b.citas_afectadas === 1 ? '' : 's'} en este horario: muévela${b.citas_afectadas === 1 ? '' : 's'} o cancéla${b.citas_afectadas === 1 ? 'la' : 'las'}.</small>` : ''}
+        </div>
+        <button class="icon-btn danger" type="button" data-quitar-bloqueo="${b.id_bloqueo}" title="Quitar bloqueo">${icono('trash')}</button>
+      </div>`).join('');
+  $$('[data-quitar-bloqueo]').forEach((btn) => btn.addEventListener('click', async () => {
+    if (!(await confirmar({ titulo: '¿Quitar este bloqueo?', texto: 'Esos horarios vuelven a quedar disponibles para agendar.', boton: 'Quitar' }))) return;
+    try {
+      await api.eliminarBloqueo(estado.negocio.id_negocio, btn.dataset.quitarBloqueo);
+      mostrarToast('Bloqueo quitado');
+      cargarBloqueos();
+    } catch (error) {
+      mostrarToast(error.message, 'error');
+    }
+  }));
+}
+
+function actualizarFormBloqueo() {
+  const tipo = $('bloqueoTipo').value;
+  $('bloqueoFechas').classList.toggle('hidden', tipo === 'semanal');
+  $('bloqueoHastaCampo').classList.toggle('hidden', tipo === 'tramo');
+  $('bloqueoDias').classList.toggle('hidden', tipo !== 'semanal');
+  $('bloqueoHoras').classList.toggle('hidden', tipo === 'dias');
+}
+
+function abrirBloqueos() {
+  if (!$('bloqueoDesde').value) $('bloqueoDesde').value = fechaLocalISO();
+  actualizarFormBloqueo();
+  renderizarBloqueos();
+  $('drawerBloqueo').classList.add('open');
+}
+
+$('btnBloqueos').addEventListener('click', abrirBloqueos);
+$('bloqueoTipo').addEventListener('change', actualizarFormBloqueo);
+
+$('formBloqueo').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const tipo = $('bloqueoTipo').value;
+  const datos = { motivo: $('bloqueoMotivo').value.trim() || null };
+  if (tipo === 'semanal') {
+    Object.assign(datos, {
+      tipo: 'semanal',
+      dias_semana: $$('#bloqueoDias input:checked').map((i) => Number(i.value)),
+    });
+  } else {
+    Object.assign(datos, {
+      tipo: 'fechas',
+      fecha_desde: $('bloqueoDesde').value || null,
+      fecha_hasta: tipo === 'dias' ? ($('bloqueoHasta').value || $('bloqueoDesde').value || null) : $('bloqueoDesde').value || null,
+    });
+  }
+  if (tipo !== 'dias') {
+    datos.hora_desde = $('bloqueoHoraDesde').value || null;
+    datos.hora_hasta = $('bloqueoHoraHasta').value || null;
+  }
+  manejarEnvio(e.target, async () => {
+    const creado = await api.crearBloqueo(estado.negocio.id_negocio, datos);
+    $('bloqueoMotivo').value = '';
+    await cargarBloqueos();
+    mostrarToast(creado.citas_afectadas
+      ? `Horario bloqueado. Ojo: hay ${creado.citas_afectadas} cita(s) agendada(s) ahí.`
+      : 'Horario bloqueado');
   });
 });
 
@@ -928,7 +1098,9 @@ function renderizarConversaciones() {
           <span class="conv-bottom">
             <small>${c.nombre_cliente ? escapeHtml(formatoTelefono(c.telefono_cliente)) : 'Sin nombre aún'}</small>
             <span style="display:flex;gap:6px;align-items:center">
-              <span class="pill ${c.estado === 'abierta' ? 'pill-success' : 'pill-muted'}">${escapeHtml(c.estado)}</span>
+              ${botEnPausa(c)
+                ? '<span class="pill pill-warning" title="Bot en pausa: la estás atendiendo tú">en pausa</span>'
+                : `<span class="pill ${c.estado === 'abierta' ? 'pill-success' : 'pill-muted'}">${escapeHtml(c.estado)}</span>`}
               <span class="count" title="Mensajes">${c.total_mensajes}</span>
             </span>
           </span>
@@ -989,11 +1161,49 @@ async function abrirMensajes(conv, { silencioso = false } = {}) {
   }
 }
 
+function botEnPausa(conv) {
+  return Boolean(conv && conv.bot_pausado_hasta && fechaUTC(conv.bot_pausado_hasta) > new Date());
+}
+
 function actualizarComposer(conv) {
   const puede = Boolean(conv && conv.puede_responder);
   $('formResponder').classList.toggle('hidden', !conv || !puede);
   $('chatCerrado').classList.toggle('hidden', !conv || puede);
+  actualizarControlBot(conv);
 }
+
+// Tomar el control: el bot se calla en esta conversación mientras el dueño atiende
+function actualizarControlBot(conv) {
+  $('chatBot').classList.toggle('hidden', !conv);
+  if (!conv) return;
+  const pausado = botEnPausa(conv);
+  const hasta = pausado ? fechaUTC(conv.bot_pausado_hasta) : null;
+  const mismoDia = hasta && hasta.toDateString() === new Date().toDateString();
+  $('chatBotPausa').classList.toggle('hidden', !pausado);
+  if (pausado) {
+    $('chatBotPausa').textContent = `Bot en pausa hasta ${mismoDia ? 'las ' : ''}${mismoDia ? formatoHora(conv.bot_pausado_hasta) : formatoFechaHora(conv.bot_pausado_hasta)}`;
+  }
+  $('btnBotConversacion').innerHTML = pausado ? `${icono('play')}Reactivar bot` : `${icono('pause')}Pausar bot`;
+  $('btnBotConversacion').title = pausado
+    ? 'El bot vuelve a responder en esta conversación'
+    : 'El bot deja de responder en esta conversación para que la atiendas tú';
+  $('chatNotaPausa').classList.toggle('hidden', pausado || !conv.puede_responder);
+}
+
+$('btnBotConversacion').addEventListener('click', async () => {
+  const conv = estado.conversaciones.find((c) => c.id_conversacion === estado.conversacionActiva);
+  if (!conv) return;
+  const pausar = !botEnPausa(conv);
+  try {
+    const actualizada = await api.pausarBotConversacion(estado.negocio.id_negocio, conv.id_conversacion, pausar);
+    Object.assign(conv, actualizada);
+    actualizarComposer(conv);
+    renderizarConversaciones();
+    mostrarToast(pausar ? 'Bot en pausa en esta conversación' : 'El bot vuelve a responder en esta conversación');
+  } catch (error) {
+    mostrarToast(error.message, 'error');
+  }
+});
 
 $('formResponder').addEventListener('submit', (e) => {
   e.preventDefault();
@@ -1006,7 +1216,9 @@ $('formResponder').addEventListener('submit', (e) => {
     await cargarConversaciones();
     const conv = estado.conversaciones.find((c) => c.id_conversacion === estado.conversacionActiva);
     if (conv) await abrirMensajes(conv, { silencioso: true });
+    if (conv) actualizarComposer(conv);
     $('chatThread').scrollTop = $('chatThread').scrollHeight;
+    if (botEnPausa(conv)) mostrarToast('Enviado. El bot queda en pausa en esta conversación mientras la atiendes.');
   });
 });
 
@@ -1023,6 +1235,163 @@ $('respuestaTexto').addEventListener('input', (e) => {
 });
 
 $('btnCerrarMensajes').addEventListener('click', () => $('inbox').classList.remove('reading'));
+
+/* -------------------------------- Clientes -------------------------------- */
+
+async function cargarClientes() {
+  try {
+    estado.clientes = await api.listarClientes(estado.negocio.id_negocio);
+    renderizarClientes();
+  } catch (error) {
+    mostrarToast(error.message, 'error');
+  }
+}
+
+function fechaCorta(iso) {
+  const d = new Date(`${iso}T12:00:00`);
+  return d.toLocaleDateString('es-CL', { weekday: 'short', day: 'numeric', month: 'short' });
+}
+
+function renderizarClientes() {
+  const cont = $('listaClientes');
+  const q = $('buscarCliente').value.trim().toLowerCase();
+  const digitos = q.replace(/\D/g, '');
+  const lista = (estado.clientes || []).filter((c) => !q
+    || (c.nombre || '').toLowerCase().includes(q)
+    || (c.correo || '').toLowerCase().includes(q)
+    || (digitos && c.telefono.includes(digitos)));
+
+  if (!estado.clientes || estado.clientes.length === 0) {
+    cont.innerHTML = `<div class="empty">${icono('chat')}<b>Todavía no hay clientes</b><span>Aparecen aquí cuando te escriben o agendan.</span></div>`;
+    return;
+  }
+  if (lista.length === 0) {
+    cont.innerHTML = `<div class="empty"><b>Sin resultados para "${escapeHtml(q)}"</b></div>`;
+    return;
+  }
+  cont.innerHTML = lista.map((c) => `
+    <button class="cliente-card" type="button" data-ver-cliente="${c.id_cliente}">
+      <span class="cliente-top">
+        <span class="avatar avatar-sm">${escapeHtml(iniciales(c.nombre))}</span>
+        <span style="min-width:0">
+          <b>${escapeHtml(c.nombre || formatoTelefono(c.telefono))}</b>
+          <small class="mono">${escapeHtml(formatoTelefono(c.telefono))}</small>
+        </span>
+      </span>
+      <span class="cliente-nums">
+        <span><b>${c.total_citas}</b>citas</span>
+        <span><b>${c.completadas}</b>atendidas</span>
+        <span class="${c.inasistencias ? 'malo' : ''}"><b>${c.inasistencias}</b>no asistió</span>
+      </span>
+      ${c.proxima_cita
+        ? `<span class="cliente-prox">Próxima: ${fechaCorta(c.proxima_cita.fecha_cita)}, ${c.proxima_cita.hora_cita.slice(0, 5)} · ${escapeHtml(c.proxima_cita.nombre_servicio)}</span>`
+        : `<span class="cliente-prox sin">${c.ultima_visita ? `Última visita: ${fechaCorta(c.ultima_visita)}` : 'Sin citas próximas'}</span>`}
+      ${c.notas ? `<span class="cliente-nota">${escapeHtml(c.notas)}</span>` : ''}
+    </button>`).join('');
+  $$('[data-ver-cliente]', cont).forEach((b) => b.addEventListener('click', () => abrirFicha(Number(b.dataset.verCliente))));
+}
+
+$('buscarCliente').addEventListener('input', renderizarClientes);
+
+async function abrirFicha(idCliente) {
+  try {
+    const c = await api.obtenerCliente(estado.negocio.id_negocio, idCliente);
+    estado.fichaActiva = c;
+    $('fichaAvatar').textContent = iniciales(c.nombre);
+    $('fichaNombre').textContent = c.nombre || formatoTelefono(c.telefono);
+    $('fichaContacto').textContent = [formatoTelefono(c.telefono), c.correo].filter(Boolean).join(' · ');
+    $('fichaStats').innerHTML = `
+      <div><b>${c.total_citas}</b>citas</div>
+      <div><b>${c.completadas}</b>atendidas</div>
+      <div class="${c.inasistencias ? 'malo' : ''}"><b>${c.inasistencias}</b>no asistió</div>
+      <div><b>${c.canceladas}</b>canceladas</div>`;
+    $('fichaNotas').value = c.notas || '';
+    $('fichaCitas').innerHTML = c.citas.length === 0
+      ? '<div class="vacio-chico">Todavía no tiene citas.</div>'
+      : c.citas.map((x) => `
+        <div class="ficha-cita">
+          <span><b>${fechaCorta(x.fecha_cita)}, ${x.hora_cita.slice(0, 5)}</b> · ${escapeHtml(x.nombre_servicio)}</span>
+          <span class="estado-cita st-${x.estado_cita}">${ETIQUETA_ESTADO[x.estado_cita] || x.estado_cita}</span>
+        </div>`).join('');
+    $('btnFichaConversacion').classList.toggle('hidden', !c.id_conversacion);
+    $('drawerCliente').classList.add('open');
+  } catch (error) {
+    mostrarToast(error.message, 'error');
+  }
+}
+
+$('formNotas').addEventListener('submit', (e) => {
+  e.preventDefault();
+  if (!estado.fichaActiva) return;
+  manejarEnvio(e.target, async () => {
+    const c = await api.guardarNotasCliente(estado.negocio.id_negocio, estado.fichaActiva.id_cliente, $('fichaNotas').value);
+    estado.fichaActiva = c;
+    const enLista = (estado.clientes || []).find((x) => x.id_cliente === c.id_cliente);
+    if (enLista) enLista.notas = c.notas;
+    renderizarClientes();
+    mostrarToast('Notas guardadas');
+  });
+});
+
+$('btnFichaConversacion').addEventListener('click', async () => {
+  const id = estado.fichaActiva?.id_conversacion;
+  if (!id) return;
+  cerrarDrawer('drawerCliente');
+  cambiarVista('historial');
+  await cargarConversaciones();
+  const conv = estado.conversaciones.find((c) => c.id_conversacion === id);
+  if (conv) abrirMensajes(conv);
+});
+
+/* -------------------------------- Mi cuenta -------------------------------- */
+
+function rellenarCuenta() {
+  const a = estado.administrador;
+  if (!a) return;
+  $('cuentaNombre').value = a.nombre || '';
+  $('cuentaCorreo').value = a.correo || '';
+  $('cuentaClaveActual').value = '';
+  $('campoClaveCorreo').classList.add('hidden');
+  $('cuentaDesde').textContent = a.fecha_registro
+    ? `Cuenta creada el ${fechaUTC(a.fecha_registro).toLocaleDateString('es-CL', { day: 'numeric', month: 'long', year: 'numeric' })}.`
+    : '';
+}
+
+// Para cambiar el correo se pide la contraseña actual
+$('cuentaCorreo').addEventListener('input', () => {
+  const cambia = $('cuentaCorreo').value.trim().toLowerCase() !== (estado.administrador?.correo || '').toLowerCase();
+  $('campoClaveCorreo').classList.toggle('hidden', !cambia);
+  $('cuentaClaveActual').required = cambia;
+});
+
+$('formCuenta').addEventListener('submit', (e) => {
+  e.preventDefault();
+  manejarEnvio(e.target, async () => {
+    const correo = $('cuentaCorreo').value.trim();
+    const datos = { nombre: $('cuentaNombre').value.trim() };
+    if (correo.toLowerCase() !== estado.administrador.correo.toLowerCase()) {
+      datos.correo = correo;
+      datos.contrasena_actual = $('cuentaClaveActual').value;
+    }
+    estado.administrador = await api.actualizarCuenta(datos);
+    $('sidebarCorreo').textContent = estado.administrador.correo;
+    rellenarCuenta();
+    mostrarToast('Datos de la cuenta actualizados');
+  });
+});
+
+$('formClave').addEventListener('submit', (e) => {
+  e.preventDefault();
+  if ($('claveNueva').value !== $('claveRepetir').value) {
+    mostrarToast('Las contraseñas nuevas no coinciden', 'error');
+    return;
+  }
+  manejarEnvio(e.target, async () => {
+    await api.cambiarContrasena({ contrasena_actual: $('claveActual').value, nueva_contrasena: $('claveNueva').value });
+    e.target.reset();
+    mostrarToast('Contraseña actualizada');
+  });
+});
 
 /* ------------------------- Actualización en vivo --------------------------- */
 
@@ -1053,6 +1422,9 @@ async function revisarNovedades() {
       }
       cargarEstadisticasResumen();
     }
+    const huboCambios = (estado.firmaAgenda !== null && n.firma_agenda !== estado.firmaAgenda)
+      || (estado.firmaConversaciones !== null && n.firma_conversaciones !== estado.firmaConversaciones);
+    if (huboCambios && vistaActiva() === 'viewClientes') cargarClientes();
     estado.firmaAgenda = n.firma_agenda;
     estado.firmaConversaciones = n.firma_conversaciones;
     actualizarAvisos(n.avisos);

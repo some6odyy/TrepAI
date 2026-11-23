@@ -3,7 +3,7 @@ from datetime import date, datetime, time
 from typing import Literal
 from pydantic import BaseModel, Field
 
-EstadoCita = Literal["pendiente", "confirmada", "cancelada", "completada", "expirada"]
+EstadoCita = Literal["pendiente", "confirmada", "cancelada", "completada", "no_asistio", "expirada"]
 
 
 class CitaCreate(BaseModel):
@@ -15,6 +15,16 @@ class CitaCreate(BaseModel):
     id_servicio: int
     fecha_cita: date
     hora_cita: time
+
+
+class CitaUpdate(BaseModel):
+    """Editar una cita desde la Agenda: solo se cambian los campos enviados."""
+    id_servicio: int | None = None
+    fecha_cita: date | None = None
+    hora_cita: time | None = None
+    nombre_cliente: str | None = Field(default=None, min_length=2, max_length=100)
+    correo_cliente: str | None = Field(default=None, min_length=5, max_length=100)
+    telefono_contacto: str | None = Field(default=None, min_length=8, max_length=20)
 
 
 class CitaEstadoUpdate(BaseModel):

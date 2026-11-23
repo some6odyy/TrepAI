@@ -43,6 +43,23 @@
         <path
           d="M21 11.5a8.4 8.4 0 0 1-8.9 8.4 8.5 8.5 0 0 1-4-1L3 20l1.1-5a8.4 8.4 0 0 1-1-4A8.4 8.4 0 0 1 11.5 3 8.5 8.5 0 0 1 21 11.5Z" />
       </symbol>
+      <symbol id="i-edit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+        stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 20h9" />
+        <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+      </symbol>
+      <symbol id="i-block" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+        stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="9" />
+        <line x1="5.6" y1="5.6" x2="18.4" y2="18.4" />
+      </symbol>
+      <symbol id="i-pause" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <line x1="9" y1="6" x2="9" y2="18" />
+        <line x1="15" y1="6" x2="15" y2="18" />
+      </symbol>
+      <symbol id="i-play" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+        <path d="M8 5.5v13a1 1 0 0 0 1.5.9l10.4-6.5a1 1 0 0 0 0-1.8L9.5 4.6A1 1 0 0 0 8 5.5Z" />
+      </symbol>
       <symbol id="i-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
         stroke-linecap="round" stroke-linejoin="round">
         <path d="M3 6h18" />
@@ -187,6 +204,24 @@
           </svg>
           Historial
         </div>
+        <div class="nav-item" data-view="clientes">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+            stroke-linejoin="round">
+            <circle cx="9" cy="8" r="3.5" />
+            <path d="M2.5 20c.6-3.6 3.3-5.5 6.5-5.5s5.9 1.9 6.5 5.5" />
+            <path d="M16 4.6a3.5 3.5 0 0 1 0 6.8" />
+            <path d="M18.5 14.8c1.7.7 2.8 2.4 3 5.2" />
+          </svg>
+          Clientes
+        </div>
+        <div class="nav-item" data-view="cuenta">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+            stroke-linejoin="round">
+            <circle cx="12" cy="8" r="4" />
+            <path d="M4 21c.8-4 4-6 8-6s7.2 2 8 6" />
+          </svg>
+          Mi cuenta
+        </div>
         <div class="sidebar-footer">
           <div class="negocio-nombre" id="sidebarNegocio">—</div>
           <div class="admin-correo" id="sidebarCorreo">—</div>
@@ -284,6 +319,17 @@
                   </svg></span>
               </div>
               <div class="stat-value" id="statServicios">0</div>
+            </div>
+            <div class="stat-card" title="RNF-01: desde que llega el mensaje del cliente hasta que sale la respuesta del bot (últimos 7 días)">
+              <div class="stat-top">
+                <span class="stat-label">Tiempo de respuesta</span>
+                <span class="stat-icon icon-brand"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M13 2 4 14h7l-1 8 9-12h-7Z" />
+                  </svg></span>
+              </div>
+              <div class="stat-value" id="statLatencia">—</div>
+              <div class="stat-sub" id="statLatenciaSub">Sin respuestas aún</div>
             </div>
           </div>
 
@@ -642,10 +688,16 @@
               <h1>Próximas citas</h1>
               <p class="text-muted">Citas agendadas por el bot o manualmente. Se actualiza sola.</p>
             </div>
-            <button class="btn btn-primary" id="btnNuevaCita"><svg class="i">
-                <use href="#i-plus" />
-              </svg>Agendar manualmente</button>
+            <div class="head-actions">
+              <button class="btn" id="btnBloqueos"><svg class="i">
+                  <use href="#i-block" />
+                </svg>Bloquear horario</button>
+              <button class="btn btn-primary" id="btnNuevaCita"><svg class="i">
+                  <use href="#i-plus" />
+                </svg>Agendar manualmente</button>
+            </div>
           </div>
+          <div class="bloqueos-strip hidden" id="bloqueosStrip"></div>
 
           <div class="toolbar">
             <div class="filter-chips" id="filtroEstados">
@@ -653,6 +705,7 @@
               <button class="chip" data-estado="pendiente">Pendientes <b data-count="pendiente"></b></button>
               <button class="chip" data-estado="confirmada">Confirmadas <b data-count="confirmada"></b></button>
               <button class="chip" data-estado="completada">Completadas <b data-count="completada"></b></button>
+              <button class="chip" data-estado="no_asistio">No asistió <b data-count="no_asistio"></b></button>
               <button class="chip" data-estado="cancelada">Canceladas <b data-count="cancelada"></b></button>
               <button class="chip" data-estado="expirada">Expiradas <b data-count="expirada"></b></button>
             </div>
@@ -695,9 +748,13 @@
                     <use href="#i-back" />
                   </svg></button>
                 <div class="avatar avatar-sm" id="chatAvatar">?</div>
-                <div>
+                <div class="chat-head-info">
                   <b id="mensajesTitulo">Conversación</b>
                   <small class="text-muted" id="chatSub"></small>
+                </div>
+                <div class="chat-bot hidden" id="chatBot">
+                  <span class="pill pill-warning hidden" id="chatBotPausa"></span>
+                  <button class="btn btn-sm" id="btnBotConversacion" type="button"></button>
                 </div>
               </header>
               <div class="chat-thread" id="chatThread">
@@ -708,6 +765,7 @@
                   <p>Elige una conversación para leerla.</p>
                 </div>
               </div>
+              <div class="chat-nota hidden" id="chatNotaPausa">Al responder tú, el bot se pausa en esta conversación para no contestar encima.</div>
               <form class="chat-composer hidden" id="formResponder" autocomplete="off">
                 <textarea id="respuestaTexto" rows="1" maxlength="4000"
                   placeholder="Escribe una respuesta para el cliente…" required></textarea>
@@ -720,6 +778,77 @@
           </div>
         </section>
 
+        <!-- ---------- CLIENTES ---------- -->
+        <section class="view vista-v2" id="viewClientes">
+          <div class="page-head">
+            <div>
+              <div class="eyebrow">Clientes</div>
+              <h1>Fichas de clientes</h1>
+              <p class="text-muted">Quienes te escribieron o agendaron, con sus citas, inasistencias y tus notas.</p>
+            </div>
+          </div>
+          <label class="search search-wide">
+            <svg class="i">
+              <use href="#i-search" />
+            </svg>
+            <input type="search" id="buscarCliente" placeholder="Buscar por nombre, teléfono o correo">
+          </label>
+          <div class="clientes-grid" id="listaClientes"></div>
+        </section>
+
+        <!-- ---------- MI CUENTA ---------- -->
+        <section class="view vista-v2" id="viewCuenta">
+          <div class="page-head">
+            <div>
+              <div class="eyebrow">Mi cuenta</div>
+              <h1>Datos de acceso</h1>
+              <p class="text-muted">Tu nombre, el correo con el que inicias sesión y tu contraseña.</p>
+            </div>
+          </div>
+          <div class="cuenta-grid">
+            <div class="card">
+              <div class="card-header">
+                <h2>Datos de la cuenta</h2>
+              </div>
+              <form id="formCuenta" autocomplete="off">
+                <div class="field">
+                  <label for="cuentaNombre">Nombre</label>
+                  <input type="text" id="cuentaNombre" required minlength="2" maxlength="100">
+                </div>
+                <div class="field">
+                  <label for="cuentaCorreo">Correo</label>
+                  <input type="email" id="cuentaCorreo" required maxlength="100">
+                </div>
+                <div class="field hidden" id="campoClaveCorreo">
+                  <label for="cuentaClaveActual">Contraseña actual (para cambiar el correo)</label>
+                  <input type="password" id="cuentaClaveActual" autocomplete="current-password">
+                </div>
+                <p class="text-muted form-hint" id="cuentaDesde"></p>
+                <button type="submit" class="btn btn-primary">Guardar cambios</button>
+              </form>
+            </div>
+            <div class="card">
+              <div class="card-header">
+                <h2>Cambiar contraseña</h2>
+              </div>
+              <form id="formClave" autocomplete="off">
+                <div class="field">
+                  <label for="claveActual">Contraseña actual</label>
+                  <input type="password" id="claveActual" required autocomplete="current-password">
+                </div>
+                <div class="field">
+                  <label for="claveNueva">Nueva contraseña</label>
+                  <input type="password" id="claveNueva" required minlength="8" maxlength="72" autocomplete="new-password">
+                </div>
+                <div class="field">
+                  <label for="claveRepetir">Repite la nueva contraseña</label>
+                  <input type="password" id="claveRepetir" required minlength="8" maxlength="72" autocomplete="new-password">
+                </div>
+                <button type="submit" class="btn btn-primary">Cambiar contraseña</button>
+              </form>
+            </div>
+          </div>
+        </section>
 
       </main>
     </div>
@@ -763,8 +892,100 @@
         </div>
         <p class="text-muted form-hint" id="citaHint">Se agenda con al menos 2 horas de anticipación. El cliente recibirá
           un aviso al agendar, un recordatorio el día antes y un mensaje para confirmar 1 hora antes.</p>
-        <button type="submit" class="btn btn-primary btn-block">Agendar cita</button>
+        <button type="submit" class="btn btn-primary btn-block" id="btnGuardarCita">Agendar cita</button>
       </form>
+    </aside>
+  </div>
+
+  <!-- Panel lateral: bloquear horarios -->
+  <div class="drawer-backdrop vista-v2" id="drawerBloqueo">
+    <aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="bloqueoTitulo">
+      <header class="drawer-head">
+        <h2 id="bloqueoTitulo">Bloquear horario</h2>
+        <button class="icon-btn" data-close-drawer title="Cerrar"><svg class="i">
+            <use href="#i-x" />
+          </svg></button>
+      </header>
+      <p class="text-muted form-hint">Ni tú ni el bot podrán agendar en estos horarios. Úsalo para vacaciones, feriados o la
+        hora de almuerzo.</p>
+      <form id="formBloqueo">
+        <div class="field">
+          <label for="bloqueoTipo">¿Qué quieres bloquear?</label>
+          <select id="bloqueoTipo">
+            <option value="dias">Días completos (vacaciones, feriado)</option>
+            <option value="tramo">Unas horas de un día</option>
+            <option value="semanal">Todas las semanas (almuerzo)</option>
+          </select>
+        </div>
+        <div class="field-row" id="bloqueoFechas">
+          <div class="field">
+            <label for="bloqueoDesde">Desde</label>
+            <input type="date" id="bloqueoDesde">
+          </div>
+          <div class="field" id="bloqueoHastaCampo">
+            <label for="bloqueoHasta">Hasta</label>
+            <input type="date" id="bloqueoHasta">
+          </div>
+        </div>
+        <div class="field hidden" id="bloqueoDias">
+          <label>Días</label>
+          <div class="dias-semana">
+            <label><input type="checkbox" value="0" checked>Lun</label>
+            <label><input type="checkbox" value="1" checked>Mar</label>
+            <label><input type="checkbox" value="2" checked>Mié</label>
+            <label><input type="checkbox" value="3" checked>Jue</label>
+            <label><input type="checkbox" value="4" checked>Vie</label>
+            <label><input type="checkbox" value="5">Sáb</label>
+            <label><input type="checkbox" value="6">Dom</label>
+          </div>
+        </div>
+        <div class="field-row hidden" id="bloqueoHoras">
+          <div class="field">
+            <label for="bloqueoHoraDesde">Desde las</label>
+            <input type="time" id="bloqueoHoraDesde">
+          </div>
+          <div class="field">
+            <label for="bloqueoHoraHasta">Hasta las</label>
+            <input type="time" id="bloqueoHoraHasta">
+          </div>
+        </div>
+        <div class="field">
+          <label for="bloqueoMotivo">Motivo (el bot se lo dice al cliente)</label>
+          <input type="text" id="bloqueoMotivo" maxlength="100" placeholder="Ej: Vacaciones, Almuerzo, Feriado">
+        </div>
+        <button type="submit" class="btn btn-primary btn-block">Bloquear</button>
+      </form>
+      <h3 class="drawer-sub">Horarios bloqueados</h3>
+      <div id="listaBloqueos" class="lista-bloqueos"></div>
+    </aside>
+  </div>
+
+  <!-- Panel lateral: ficha del cliente -->
+  <div class="drawer-backdrop vista-v2" id="drawerCliente">
+    <aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="fichaNombre">
+      <header class="drawer-head">
+        <div class="ficha-head">
+          <span class="avatar" id="fichaAvatar">?</span>
+          <div>
+            <h2 id="fichaNombre">Cliente</h2>
+            <small class="text-muted" id="fichaContacto"></small>
+          </div>
+        </div>
+        <button class="icon-btn" data-close-drawer title="Cerrar"><svg class="i">
+            <use href="#i-x" />
+          </svg></button>
+      </header>
+      <div class="ficha-stats" id="fichaStats"></div>
+      <form id="formNotas">
+        <div class="field">
+          <label for="fichaNotas">Notas (solo las ves tú)</label>
+          <textarea id="fichaNotas" rows="3" maxlength="4000" placeholder="Ej: le gusta el 1 a los lados, prefiere las tardes"></textarea>
+        </div>
+        <button type="submit" class="btn btn-sm">Guardar notas</button>
+      </form>
+      <h3 class="drawer-sub">Citas</h3>
+      <div id="fichaCitas" class="ficha-citas"></div>
+      <button class="btn btn-block hidden" id="btnFichaConversacion" type="button" style="margin-top:16px">Ver conversación</button>
     </aside>
   </div>
 

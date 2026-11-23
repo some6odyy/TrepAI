@@ -37,6 +37,7 @@ from app.services.agenda_service import (
     AnticipacionInsuficienteError,
     CitaActivaExistenteError,
     DatosContactoError,
+    HorarioBloqueadoError,
     HorarioOcupadoError,
     SinCitaActivaError,
 )
@@ -294,6 +295,8 @@ def procesar_solicitud(
         except FueraDeHorarioError:
             horario = f" Nuestro horario es: {negocio.horario}." if negocio.horario else ""
             return f"Esa hora queda fuera de nuestro horario de atención.{horario} ¿A qué otra hora la cambiamos?"
+        except HorarioBloqueadoError as err:
+            return _mensaje_bloqueo(db, negocio, servicio_nuevo, solicitud, ahora, err, cita_actual.id_agenda)
         except HorarioOcupadoError:
             libres = _sugerir_horarios(
                 db,
@@ -363,6 +366,8 @@ def procesar_solicitud(
     except FueraDeHorarioError:
         horario = f" Nuestro horario es: {negocio.horario}." if negocio.horario else ""
         return f"Esa hora queda fuera de nuestro horario de atención.{horario} ¿Te acomoda otro día u hora?"
+    except HorarioBloqueadoError as err:
+        return _mensaje_bloqueo(db, negocio, servicio, solicitud, ahora, err)
     except HorarioOcupadoError:
         libres = _sugerir_horarios(db, negocio, servicio, solicitud.fecha, solicitud.hora, ahora)
         if libres:
@@ -389,6 +394,20 @@ def procesar_solicitud(
         f"Tu hora queda *pendiente* hasta que el equipo la confirme. "
         f"Te enviaremos un recordatorio el día antes y te pediremos confirmar 1 hora antes."
     )
+
+
+def _mensaje_bloqueo(db, negocio, servicio, solicitud, ahora, err, excluir_id_agenda=None) -> str:
+    """El negocio bloqueó ese día u horario (vacaciones, feriado, almuerzo)."""
+    motivo = f" ({err.motivo})" if err.motivo else ""
+    if err.dia_completo:
+        return f"El {_fecha_legible(solicitud.fecha)} no atendemos{motivo} 🙏 ¿Te acomoda otro día?"
+    libres = _sugerir_horarios(
+        db, negocio, servicio, solicitud.fecha, solicitud.hora, ahora, excluir_id_agenda=excluir_id_agenda
+    ) or _sugerir_horarios(db, negocio, servicio, solicitud.fecha, time(0, 0), ahora, excluir_id_agenda=excluir_id_agenda)
+    base = f"A esa hora no atendemos{motivo}."
+    if libres:
+        return f"{base} El {_fecha_legible(solicitud.fecha)} tengo libre: {', '.join(f'{h:%H:%M}' for h in libres)}. ¿Te sirve alguna?"
+    return f"{base} ¿Te acomoda otro día u hora?"
 
 
 def _telefono_legible(digitos: str) -> str:

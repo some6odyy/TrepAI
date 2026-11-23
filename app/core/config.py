@@ -67,6 +67,16 @@ WHATSAPP_PLANTILLA_RECORDATORIO = os.getenv("WHATSAPP_PLANTILLA_RECORDATORIO", "
 WHATSAPP_PLANTILLA_CONFIRMACION = os.getenv("WHATSAPP_PLANTILLA_CONFIRMACION", "").strip()
 WHATSAPP_PLANTILLA_IDIOMA = os.getenv("WHATSAPP_PLANTILLA_IDIOMA", "es").strip() or "es"
 
+# --- Seguridad del webhook ---
+# Clave secreta de la app de Meta (developers.facebook.com > App settings >
+# Basic > App secret). Con ella se verifica la firma X-Hub-Signature-256 de
+# cada evento. Vacía = no se verifica (solo para desarrollo local).
+META_APP_SECRET = os.getenv("META_APP_SECRET", "").strip()
+
+# Cuando el dueño responde a mano desde Conversaciones, el bot se calla en
+# esa conversación por estas horas (o hasta que lo reactive).
+PAUSA_BOT_MANUAL_HORAS = float(os.getenv("PAUSA_BOT_MANUAL_HORAS", "2") or 2)
+
 # --- Requerimiento no funcional RNF-01: latencia máxima ---
 MAX_RESPONSE_LATENCY_SECONDS = 15
 

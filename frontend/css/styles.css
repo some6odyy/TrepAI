@@ -602,7 +602,7 @@ tr:last-child td {
 
 .stat-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 14px;
   margin-bottom: 18px;
 }
@@ -646,6 +646,18 @@ tr:last-child td {
   font-size: 24px;
   font-weight: 800;
   letter-spacing: -0.01em;
+}
+
+.stat-card .stat-sub {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+@media (max-width: 1200px) {
+  .stat-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
 }
 
 .stat-card .stat-value.small {

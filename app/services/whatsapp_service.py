@@ -6,7 +6,10 @@ Cada negocio tiene su propio phone_number_id y token (multitenant), así
 que las funciones los reciben como parámetro en vez de leerlos de un solo
 .env global.
 """
+import hashlib
+import hmac
 import logging
+from dataclasses import dataclass
 
 import requests
 
@@ -35,6 +38,70 @@ def parsear_evento(payload: dict) -> tuple[str | None, str | None, str | None]:
         return telefono, texto, phone_number_id
     except (KeyError, IndexError):
         return None, None, None
+
+
+# Mensajes que no son texto: cómo se muestran en Conversaciones
+_DESCRIPCION_TIPO = {
+    "audio": "🎤 Audio",
+    "voice": "🎤 Audio",
+    "image": "📷 Imagen",
+    "video": "🎬 Video",
+    "sticker": "💬 Sticker",
+    "document": "📄 Documento",
+    "location": "📍 Ubicación",
+    "contacts": "👤 Contacto",
+}
+
+
+@dataclass
+class MensajeEntrante:
+    telefono: str
+    phone_number_id: str
+    tipo: str  # text | audio | image | ... (tipo de Meta)
+    wamid: str | None = None
+    texto: str | None = None  # None si no es texto
+    descripcion: str | None = None  # para los que no son texto ("🎤 Audio")
+
+    @property
+    def es_texto(self) -> bool:
+        return bool(self.texto)
+
+
+def parsear_mensaje(payload: dict) -> MensajeEntrante | None:
+    """Como parsear_evento, pero también reconoce los mensajes que no son
+    texto (audio, foto, sticker...) y trae el ID del mensaje (wamid) para
+    descartar reenvíos de Meta. None si el evento no trae un mensaje (ej.
+    estados de entrega o lectura)."""
+    try:
+        value = payload["entry"][0]["changes"][0]["value"]
+        phone_number_id = value["metadata"]["phone_number_id"]
+        mensaje = value["messages"][0]
+        telefono = mensaje["from"]
+    except (KeyError, IndexError, TypeError):
+        return None
+    tipo = mensaje.get("type") or ("text" if "text" in mensaje else "desconocido")
+    entrante = MensajeEntrante(telefono=telefono, phone_number_id=phone_number_id, tipo=tipo, wamid=mensaje.get("id"))
+    if tipo == "text":
+        entrante.texto = (mensaje.get("text") or {}).get("body")
+    elif tipo == "button":  # respuesta rápida de una plantilla
+        entrante.texto = (mensaje.get("button") or {}).get("text")
+    elif tipo == "interactive":
+        interactivo = mensaje.get("interactive") or {}
+        entrante.texto = (interactivo.get("button_reply") or interactivo.get("list_reply") or {}).get("title")
+    if not entrante.texto:
+        descripcion = _DESCRIPCION_TIPO.get(tipo, "Mensaje no compatible")
+        leyenda = ((mensaje.get(tipo) or {}).get("caption") or "") if isinstance(mensaje.get(tipo), dict) else ""
+        entrante.descripcion = f"[{descripcion}]" + (f" {leyenda}" if leyenda else "")
+    return entrante
+
+
+def firma_valida(cuerpo: bytes, firma_header: str | None, app_secret: str) -> bool:
+    """Verifica la cabecera X-Hub-Signature-256 ("sha256=<hex>") que Meta
+    calcula con la clave secreta de la app sobre el cuerpo crudo del evento."""
+    if not firma_header or not firma_header.startswith("sha256="):
+        return False
+    esperada = hmac.new(app_secret.encode(), cuerpo, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(firma_header.split("=", 1)[1], esperada)
 
 
 def nombre_perfil(payload: dict) -> str | None:

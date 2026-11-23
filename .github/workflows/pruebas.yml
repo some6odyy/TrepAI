@@ -1,0 +1,33 @@
+# Corre todas las pruebas en cada push y pull request.
+# Si algo falla, GitHub marca el commit con una ❌ y avisa por correo.
+name: Pruebas
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  pruebas:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Instalar dependencias
+        run: pip install -r requirements-dev.txt
+
+      - name: Pruebas unitarias e integración
+        run: pytest
+
+      - name: Prueba end-to-end (backend real con datos de Silvabarber)
+        env:
+          DATABASE_URL: sqlite:///./e2e.db
+        run: |
+          uvicorn app.main:app --port 8000 &
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:8000/status && break; sleep 1; done
+          python tests/smoke_test.py

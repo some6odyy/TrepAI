@@ -30,3 +30,14 @@ class AdministradorResponse(BaseModel):
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+
+class ActualizarCuentaRequest(BaseModel):
+    nombre: str | None = Field(default=None, min_length=2, max_length=100)
+    correo: EmailStr | None = None
+    contrasena_actual: str | None = Field(default=None, description="Obligatoria para cambiar el correo")
+
+
+class CambiarContrasenaRequest(BaseModel):
+    contrasena_actual: str
+    nueva_contrasena: str = Field(min_length=8, max_length=72, description="Entre 8 y 72 caracteres")

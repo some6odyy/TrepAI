@@ -286,3 +286,89 @@ section.vista-v2.active { animation: v2-rise .35s var(--ease); }
 
 /* Teléfono en una sola línea en la lista de Conversaciones */
 .vista-v2 .conv-bottom small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+
+/* ==========================================================================
+   Mejoras finales: bloqueos, editar cita, tomar el control, Clientes y
+   Mi cuenta
+   ========================================================================== */
+.vista-v2 .head-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.vista-v2 .pill-warning { background: var(--warning-tint); color: var(--warning); }
+.vista-v2 .st-no_asistio { --st: var(--danger); --st-bg: var(--surface-muted); }
+.vista-v2 .cita.no_asistio .cita-hora { opacity: .6; }
+.vista-v2 .cita { grid-template-columns: 70px 1fr auto auto auto; }
+.vista-v2 .cita .acciones { display: flex; gap: 2px; }
+
+/* Franja con los bloqueos vigentes sobre la agenda */
+.vista-v2 .bloqueos-strip { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: -8px 0 18px; }
+.vista-v2 .bloqueos-strip > span { font-size: 12.5px; color: var(--text-muted); font-weight: 600; }
+.vista-v2 .bloqueo-chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 999px; cursor: pointer;
+  background: var(--surface-muted); border: 1px dashed var(--border-strong); font: 600 12px var(--font-body); color: var(--text);
+}
+.vista-v2 .bloqueo-chip .i { width: 13px; height: 13px; color: var(--danger); }
+.vista-v2 .bloqueo-chip:hover { border-color: var(--brand); }
+
+/* Panel de bloqueos */
+.vista-v2 .drawer-sub { font-size: 14px; font-weight: 700; margin: 26px 0 10px; }
+.vista-v2 .dias-semana { display: flex; flex-wrap: wrap; gap: 6px; }
+.vista-v2 .dias-semana label {
+  display: inline-flex; align-items: center; gap: 4px; padding: 6px 10px; border-radius: 999px;
+  border: 1px solid var(--border-strong); font-size: 13px; cursor: pointer; margin: 0; font-weight: 600;
+}
+.vista-v2 .dias-semana input { width: auto; margin: 0; accent-color: var(--brand); }
+.vista-v2 .lista-bloqueos { display: flex; flex-direction: column; gap: 8px; }
+.vista-v2 .bloqueo-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px;
+  border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--bg);
+}
+.vista-v2 .bloqueo-item b { display: block; font-size: 13.5px; }
+.vista-v2 .bloqueo-item small { color: var(--text-muted); font-size: 12px; }
+.vista-v2 .bloqueo-item small.aviso-citas { color: var(--danger); font-weight: 600; }
+.vista-v2 .vacio-chico { color: var(--text-muted); font-size: 13px; padding: 8px 0; }
+
+/* Tomar el control de una conversación */
+.vista-v2 .chat-head-info { flex: 1; min-width: 0; }
+.vista-v2 .chat-bot { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.vista-v2 .chat-bot .btn .i { width: 14px; height: 14px; }
+.vista-v2 .chat-nota { padding: 7px 16px; font-size: 12px; color: var(--text-muted); border-top: 1px solid var(--border); background: var(--surface); }
+
+/* Clientes */
+.vista-v2 .search-wide { margin: 0 0 18px; max-width: 440px; background: var(--surface); }
+.vista-v2 .clientes-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 14px; }
+.vista-v2 .cliente-card {
+  text-align: left; display: flex; flex-direction: column; gap: 12px; padding: 16px; cursor: pointer;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); font: inherit; color: inherit;
+  transition: box-shadow .15s, border-color .15s;
+}
+.vista-v2 .cliente-card:hover { box-shadow: var(--shadow); border-color: var(--border-strong); }
+.vista-v2 .cliente-top { display: flex; gap: 12px; align-items: center; min-width: 0; }
+.vista-v2 .cliente-top b { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vista-v2 .cliente-top small { color: var(--text-muted); font-size: 12.5px; }
+.vista-v2 .cliente-nums { display: flex; gap: 16px; font-size: 12px; color: var(--text-muted); }
+.vista-v2 .cliente-nums b { display: block; font: 700 17px var(--font-display); color: var(--text); }
+.vista-v2 .cliente-nums .malo b { color: var(--danger); }
+.vista-v2 .cliente-prox { font-size: 12.5px; padding: 7px 10px; border-radius: var(--r-sm); background: var(--success-tint); color: var(--success); font-weight: 600; }
+.vista-v2 .cliente-prox.sin { background: var(--surface-muted); color: var(--text-muted); font-weight: 500; }
+.vista-v2 .cliente-nota { font-size: 12.5px; color: var(--text-muted); font-style: italic; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.vista-v2 .ficha-head { display: flex; gap: 12px; align-items: center; }
+.vista-v2 .ficha-head small { display: block; }
+.vista-v2 .ficha-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 18px; }
+.vista-v2 .ficha-stats div { text-align: center; padding: 10px 4px; border-radius: var(--r-sm); background: var(--bg); border: 1px solid var(--border); font-size: 11.5px; color: var(--text-muted); }
+.vista-v2 .ficha-stats b { display: block; font: 800 20px var(--font-display); color: var(--text); }
+.vista-v2 .ficha-stats .malo b { color: var(--danger); }
+.vista-v2 .ficha-citas { display: flex; flex-direction: column; gap: 6px; }
+.vista-v2 .ficha-cita { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 10px; border-radius: var(--r-sm); border: 1px solid var(--border); font-size: 13px; }
+.vista-v2 .ficha-cita .pill { font-size: 11px; }
+.vista-v2 .estado-cita { display: inline-block; padding: 2px 9px; border-radius: 999px; font: 700 11px var(--font-body); background: var(--st-bg); color: var(--st); }
+
+/* Mi cuenta */
+.vista-v2 .cuenta-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; align-items: start; }
+
+@media (max-width: 680px) {
+  .vista-v2 .cita { grid-template-columns: 1fr auto auto; }
+  .vista-v2 .ficha-stats { grid-template-columns: repeat(2, 1fr); }
+  .vista-v2 .chat-head { flex-wrap: wrap; }
+  .vista-v2 .chat-bot { width: 100%; justify-content: flex-start; }
+}
+
+.vista-v2 .status-select { text-transform: none; }

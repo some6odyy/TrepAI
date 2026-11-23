@@ -1,13 +1,12 @@
-"""RF-01 | Autenticación: registro, login y recuperación de contraseña."""
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+"""RF-01 | Autenticación: registro, login, recuperación de contraseña y Mi cuenta."""
 from pydantic import BaseModel, EmailStr, Field
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 from app.db.database import get_db
 from app.core.security import hashear_contrasena, verificar_contrasena, crear_access_token
 from app.core.deps import obtener_administrador_actual
 from app.models.administrador import Administrador
+from app.services import limite_intentos
 from app.services.recuperacion import (
     enviar_correo_recuperacion,
     generar_token_recuperacion,
@@ -18,6 +17,8 @@ from app.schemas.auth import (
     LoginRequest,
     RecuperarContrasenaRequest,
     AdministradorResponse,
+    ActualizarCuentaRequest,
+    CambiarContrasenaRequest,
     TokenResponse,
 )
 
@@ -47,19 +48,23 @@ def registrar_administrador(datos: RegistroRequest, db: Session = Depends(get_db
 
 
 @router.post("/login", response_model=TokenResponse)
-def iniciar_sesion(datos: LoginRequest, db: Session = Depends(get_db)):
+def iniciar_sesion(datos: LoginRequest, request: Request, db: Session = Depends(get_db)):
     credenciales_invalidas = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Correo o contraseña incorrectos",
     )
+    ip = limite_intentos.ip_de(request)
+    # Demasiados intentos fallidos con este correo o desde esta IP -> 429
+    limite_intentos.verificar_login(db, datos.correo, ip)
 
     administrador = db.query(Administrador).filter(Administrador.correo == datos.correo).first()
-    if administrador is None:
+    if administrador is None or not verificar_contrasena(datos.contrasena, administrador.contrasena):
+        limite_intentos.registrar(
+            db, "login", limite_intentos.clave_correo(datos.correo), limite_intentos.clave_ip(ip)
+        )
         raise credenciales_invalidas
 
-    if not verificar_contrasena(datos.contrasena, administrador.contrasena):
-        raise credenciales_invalidas
-
+    limite_intentos.limpiar(db, "login", limite_intentos.clave_correo(datos.correo))
     token = crear_access_token(administrador.id_administrador, administrador.correo)
     return TokenResponse(access_token=token)
 
@@ -81,9 +86,61 @@ def recuperar_contrasena(datos: RecuperarContrasenaRequest, db: Session = Depend
 
 @router.get("/yo", response_model=AdministradorResponse)
 def obtener_perfil_propio(administrador_actual: Administrador = Depends(obtener_administrador_actual)):
-    """Endpoint de ejemplo para probar que el token funciona: devuelve los
-    datos del administrador dueño del token enviado."""
+    """Datos del administrador dueño del token (vista Mi cuenta)."""
     return administrador_actual
+
+
+def _verificar_contrasena_actual(db: Session, administrador: Administrador, contrasena: str | None, ip: str) -> None:
+    """Para cambiar el correo o la contraseña se pide la contraseña actual.
+    Los errores cuentan como intentos fallidos de login."""
+    limite_intentos.verificar_login(db, administrador.correo, ip)
+    if not contrasena or not verificar_contrasena(contrasena, administrador.contrasena):
+        limite_intentos.registrar(
+            db, "login", limite_intentos.clave_correo(administrador.correo), limite_intentos.clave_ip(ip)
+        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="La contraseña actual no es correcta")
+
+
+@router.put("/yo", response_model=AdministradorResponse)
+def actualizar_cuenta(
+    datos: ActualizarCuentaRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    administrador_actual: Administrador = Depends(obtener_administrador_actual),
+):
+    """Mi cuenta: cambiar nombre y/o correo (el correo pide la contraseña actual)."""
+    if datos.nombre is not None:
+        administrador_actual.nombre = " ".join(datos.nombre.split())
+    if datos.correo is not None and datos.correo.lower() != administrador_actual.correo.lower():
+        _verificar_contrasena_actual(db, administrador_actual, datos.contrasena_actual, limite_intentos.ip_de(request))
+        ocupado = (
+            db.query(Administrador)
+            .filter(Administrador.correo == datos.correo, Administrador.id_administrador != administrador_actual.id_administrador)
+            .first()
+        )
+        if ocupado:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Ya existe una cuenta con ese correo")
+        administrador_actual.correo = datos.correo
+    db.commit()
+    db.refresh(administrador_actual)
+    return administrador_actual
+
+
+@router.post("/cambiar-contrasena")
+def cambiar_contrasena(
+    datos: CambiarContrasenaRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    administrador_actual: Administrador = Depends(obtener_administrador_actual),
+):
+    """Mi cuenta: cambiar la contraseña sabiendo la actual. Deja sin efecto
+    los enlaces de recuperación que se hayan enviado antes."""
+    _verificar_contrasena_actual(db, administrador_actual, datos.contrasena_actual, limite_intentos.ip_de(request))
+    if datos.contrasena_actual == datos.nueva_contrasena:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="La nueva contraseña debe ser distinta a la actual")
+    administrador_actual.contrasena = hashear_contrasena(datos.nueva_contrasena)
+    db.commit()
+    return {"detail": "Contraseña actualizada"}
 
 class ForgotPasswordRequest(BaseModel):
     correo: EmailStr
@@ -98,12 +155,15 @@ class ResetPasswordRequest(BaseModel):
 def solicitar_recuperacion(
     datos: ForgotPasswordRequest,
     background_tasks: BackgroundTasks,
+    request: Request,
     db: Session = Depends(get_db),
 ):
     correo_norm = datos.correo.strip().lower()
+    # Límite por IP (429) y por correo (se descarta en silencio)
+    se_puede_enviar = limite_intentos.verificar_recuperacion(db, correo_norm, limite_intentos.ip_de(request))
     admin = db.query(Administrador).filter(Administrador.correo == correo_norm).first()
 
-    if admin is not None:
+    if admin is not None and se_puede_enviar:
         hash_actual = getattr(admin, "contraseña", None) or getattr(admin, "contrasena", "")
         token = generar_token_recuperacion(admin.correo, hash_actual)
         background_tasks.add_task(enviar_correo_recuperacion, admin.correo, admin.nombre, token)

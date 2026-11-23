@@ -73,6 +73,7 @@ def redondear(dt: datetime) -> datetime:
 
 
 def test_todo():
+    ENVIADOS.clear()  # al correr todas las pruebas juntas, otras pudieron sumar envíos
     h, idn, serv = preparar()
     ahora = ahora_chile_naive()
 

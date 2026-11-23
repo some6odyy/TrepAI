@@ -15,6 +15,9 @@ class Conversacion(Base):
     fecha_inicio = Column(DateTime, server_default=func.now())
     fecha_fin = Column(DateTime, nullable=True)
     estado = Column(String(50), default="abierta")
+    # Tomar el control: mientras sea futura, el bot no responde en esta
+    # conversación (el dueño la está atendiendo a mano). UTC.
+    bot_pausado_hasta = Column(DateTime, nullable=True)
 
     cliente = relationship("Cliente", back_populates="conversaciones")
     negocio = relationship("Negocio", back_populates="conversaciones")
@@ -33,5 +36,9 @@ class Mensaje(Base):
     contenido = Column(Text, nullable=False)
     fecha_hora = Column(DateTime, server_default=func.now())
     tipo_mensaje = Column(String(20), default="texto")
+    # RNF-01: milisegundos desde que llegó el mensaje del cliente hasta que
+    # se envió esta respuesta, y quién la generó (ia | sin_ia | confirmacion).
+    latencia_ms = Column(Integer, nullable=True)
+    origen_respuesta = Column(String(15), nullable=True)
 
     conversacion = relationship("Conversacion", back_populates="mensajes")
