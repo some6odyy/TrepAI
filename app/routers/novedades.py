@@ -44,6 +44,7 @@ def _firma_agenda(db: Session, id_negocio: int) -> str:
         db.query(
             Agenda.id_agenda, Agenda.estado_cita, Agenda.fecha_cita, Agenda.hora_cita,
             Agenda.respuesta_cliente, Agenda.recordatorio_24h_enviado, Agenda.confirmacion_1h_enviada,
+            Agenda.nombre_contacto, Agenda.correo_contacto, Agenda.telefono_contacto,
         )
         .join(Servicio, Agenda.id_servicio == Servicio.id_servicio)
         .filter(Servicio.id_negocio == id_negocio)

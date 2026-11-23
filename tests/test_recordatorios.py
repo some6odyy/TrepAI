@@ -64,7 +64,12 @@ def crear(h, idn, serv, inicio: datetime, tel="+56 9 5555 0000", correo="juan@co
 
 
 def redondear(dt: datetime) -> datetime:
-    return dt.replace(second=0, microsecond=0) + timedelta(minutes=(-dt.minute) % 30)
+    r = dt.replace(second=0, microsecond=0) + timedelta(minutes=(-dt.minute) % 30)
+    # El horario de prueba es 00:00-23:59: una cita de 30 min a las 23:30
+    # terminaría pasada la medianoche, así que se corre a las 00:00.
+    if r.hour == 23 and r.minute == 30:
+        r += timedelta(minutes=30)
+    return r
 
 
 def test_todo():

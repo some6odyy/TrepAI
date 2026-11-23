@@ -27,6 +27,7 @@ from sqlalchemy.orm import Session
 
 from app.core.tiempo import ahora_chile_naive, ahora_utc
 
+from app.models.cliente import Cliente
 from app.models.agenda import Agenda
 from app.models.servicio import Servicio
 from app.services.horario_service import validar_dentro_de_horario
@@ -340,6 +341,70 @@ def reagendar_cita_validada(
     db.commit()
     db.refresh(cita)
     return cita
+
+
+def actualizar_contacto_cita_activa(
+    db: Session,
+    id_negocio: int,
+    id_cliente: int,
+    nombre: str | None = None,
+    correo: str | None = None,
+    telefono: str | None = None,
+) -> tuple[Agenda, Servicio, dict[str, str]]:
+    """Cambia el nombre, correo y/o teléfono de contacto de la cita activa
+    del cliente (a ellos se envían los recordatorios y la confirmación).
+    Solo se tocan los datos que vienen; devuelve (cita, servicio, cambios)
+    con los valores nuevos que efectivamente cambiaron.
+
+    Lanza SinCitaActivaError si no tiene cita activa y DatosContactoError
+    (con `invalidos`) si el correo o el teléfono no son válidos."""
+    existente = obtener_cita_activa_cliente(db, id_negocio, id_cliente)
+    if existente is None:
+        raise SinCitaActivaError("No tienes una cita activa.")
+    cita, servicio = existente
+
+    invalidos, nuevos = [], {}
+    if nombre is not None and nombre.strip():
+        nombre_ok = " ".join(nombre.split())[:100]
+        if len(nombre_ok) < 2:
+            invalidos.append("nombre")
+        else:
+            nuevos["nombre"] = nombre_ok
+    if correo is not None and correo.strip():
+        correo_ok = normalizar_correo(correo)
+        if correo_ok is None:
+            invalidos.append("correo")
+        else:
+            nuevos["correo"] = correo_ok
+    if telefono is not None and telefono.strip():
+        telefono_ok = normalizar_telefono(telefono)
+        if telefono_ok is None:
+            invalidos.append("teléfono")
+        else:
+            nuevos["teléfono"] = telefono_ok
+    if invalidos:
+        raise DatosContactoError([], invalidos)
+
+    actuales = {"nombre": cita.nombre_contacto, "correo": cita.correo_contacto, "teléfono": cita.telefono_contacto}
+    cambios = {campo: valor for campo, valor in nuevos.items() if valor != actuales[campo]}
+    if "nombre" in cambios:
+        cita.nombre_contacto = cambios["nombre"]
+    if "correo" in cambios:
+        cita.correo_contacto = cambios["correo"]
+    if "teléfono" in cambios:
+        cita.telefono_contacto = cambios["teléfono"]
+
+    # La ficha del cliente también se actualiza para las próximas reservas
+    # (el teléfono de la ficha es su WhatsApp: ese no se cambia).
+    cliente = db.query(Cliente).filter(Cliente.id_cliente == id_cliente).first()
+    if cliente is not None:
+        if "nombre" in cambios:
+            cliente.nombre_cliente = cambios["nombre"]
+        if "correo" in cambios:
+            cliente.correo = cambios["correo"]
+    db.commit()
+    db.refresh(cita)
+    return cita, servicio, cambios
 
 
 def cancelar_cita_activa(

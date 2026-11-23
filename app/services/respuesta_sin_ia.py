@@ -24,6 +24,21 @@ def _normalizar(texto: str) -> str:
     return re.sub(r"\s+", " ", sin_tildes.lower())
 
 
+def detectar_temas(texto: str) -> list[str]:
+    """Temas del negocio por los que pregunta el mensaje (servicios, horario, dirección, agendar)."""
+    return _detectar(texto)
+
+
+def es_saludo(texto: str) -> bool:
+    palabras = re.findall(r"[a-z]+", _normalizar(texto))
+    return bool(palabras) and palabras[0] in _SALUDOS
+
+
+def es_agradecimiento(texto: str) -> bool:
+    palabras = re.findall(r"[a-z]+", _normalizar(texto))
+    return bool(palabras) and palabras[0] in _GRACIAS and len(palabras) <= 5
+
+
 def _detectar(texto: str) -> list[str]:
     t = _normalizar(texto)
     return [tema for tema, palabras in _PALABRAS.items() if any(p in t for p in palabras)]

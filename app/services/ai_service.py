@@ -85,8 +85,11 @@ def armar_prompt(
             "Si el cliente quiere agendar, pide el servicio, el día y la hora (con al menos 2 horas "
             "de anticipación), además de su nombre completo, correo electrónico y un teléfono para "
             "enviarle recordatorios y la confirmación; luego dile que un miembro del equipo "
-            "confirmará la disponibilidad."
+            "confirmará la disponibilidad.\n"
         )
+        if cita_activa:
+            from app.services.agendado_ia import instruccion_contacto
+            instruccion_agenda += instruccion_contacto()
 
     dc = datos_cliente or {}
     datos_cliente_texto = (

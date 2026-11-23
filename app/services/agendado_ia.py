@@ -27,6 +27,7 @@ from datetime import date, datetime, time, timedelta
 
 from sqlalchemy.orm import Session
 
+from app.core.tiempo import ahora_chile_naive
 from app.models.agenda import Agenda
 from app.models.cliente import Cliente
 from app.models.negocio import Negocio
@@ -51,6 +52,12 @@ _RE_REAGENDAR_SIN_SERVICIO = re.compile(
     re.IGNORECASE,
 )
 _RE_CANCELAR = re.compile(r"\[\[\s*CANCELAR\s*\]\]", re.IGNORECASE)
+# Cambiar los datos de contacto de la cita activa: [[CONTACTO|nombre|correo|teléfono]]
+# ("-" o vacío = ese dato no cambia)
+_RE_CONTACTO = re.compile(
+    r"\[\[\s*CONTACTO\s*\|\s*(?P<nombre>[^|\]]*?)\s*\|\s*(?P<correo>[^|\]]*?)\s*\|\s*(?P<telefono>[^|\]]*?)\s*\]\]",
+    re.IGNORECASE,
+)
 
 _DIAS = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
 PASO_SUGERENCIAS_MIN = 30
@@ -59,13 +66,27 @@ MAX_SUGERENCIAS = 3
 
 @dataclass
 class SolicitudCita:
-    accion: str  # "AGENDAR" | "REAGENDAR" | "CANCELAR"
+    accion: str  # "AGENDAR" | "REAGENDAR" | "CANCELAR" | "CONTACTO"
     servicio: str | None = None
     fecha: date | None = None
     hora: time | None = None
     nombre: str | None = None
     correo: str | None = None
     telefono: str | None = None
+
+
+def instruccion_contacto() -> str:
+    """Cómo pedir el cambio de teléfono/correo/nombre de la cita activa. Va en
+    el prompt aunque el agendado automático esté apagado (la cita pudo
+    crearse a mano en el Dashboard)."""
+    return (
+        "- CAMBIAR DATOS DE CONTACTO (si el cliente ya tiene una cita activa y quiere que los recordatorios "
+        "lleguen a otro teléfono o correo, o corregir su nombre; ej. \"mi teléfono es +56 9 8140 7529\", "
+        "\"mejor mándalo a este número\", \"cambia mi correo\"): responde ÚNICAMENTE con:\n"
+        "[[CONTACTO|<nombre o ->|<correo o ->|<teléfono con código de país o ->]]\n"
+        "  Usa - en los datos que NO cambian. Ejemplo: [[CONTACTO|-|-|56981407529]]\n"
+        "  Si dice \"este número\" o \"este mismo\", usa el WhatsApp desde el que escribe.\n"
+    )
 
 
 def instrucciones_para_prompt() -> str:
@@ -91,14 +112,31 @@ def instrucciones_para_prompt() -> str:
         "  Ejemplo: [[REAGENDAR|Degradado|2026-11-14|17:30]]\n"
         "- CANCELAR HORA (si el cliente pide anular su cita activa): responde ÚNICAMENTE con:\n"
         "[[CANCELAR]]\n"
+        f"{instruccion_contacto()}"
         "- El sistema ejecuta la acción en la base de datos y responde al cliente; nunca digas tú "
         "que la hora quedó reservada, cambiada o cancelada ni inventes disponibilidad."
     )
 
 
+def _dato_marcador(valor: str | None) -> str | None:
+    valor = (valor or "").strip()
+    return None if valor in ("", "-", "—", "–") else valor
+
+
 def extraer_solicitud(texto: str) -> tuple[str, SolicitudCita | None]:
-    """Separa los marcadores [[AGENDAR|...]], [[REAGENDAR|...]] o [[CANCELAR]] del texto de la IA."""
+    """Separa los marcadores [[AGENDAR|...]], [[REAGENDAR|...]], [[CANCELAR]]
+    o [[CONTACTO|...]] del texto de la IA."""
     raw = texto or ""
+
+    contacto = _RE_CONTACTO.search(raw)
+    if contacto:
+        limpio = _RE_CONTACTO.sub("", raw).strip()
+        return limpio, SolicitudCita(
+            accion="CONTACTO",
+            nombre=_dato_marcador(contacto["nombre"]),
+            correo=_dato_marcador(contacto["correo"]),
+            telefono=_dato_marcador(contacto["telefono"]),
+        )
 
     if _RE_CANCELAR.search(raw):
         limpio = _RE_CANCELAR.sub("", raw).strip()
@@ -155,7 +193,9 @@ def buscar_servicio(nombre: str, servicios: list[Servicio]) -> Servicio | None:
 
 
 def _fecha_legible(fecha: date) -> str:
-    return f"{_DIAS[fecha.weekday()]} {fecha:%d-%m}"
+    """"sábado 28-11" (con el año si no es el actual: "lunes 29-11-2027")."""
+    anio = "" if fecha.year == ahora_chile_naive().year else f"-{fecha.year}"
+    return f"{_DIAS[fecha.weekday()]} {fecha:%d-%m}{anio}"
 
 
 def _sugerir_horarios(
@@ -198,7 +238,10 @@ def procesar_solicitud(
     solicitud: SolicitudCita,
     ahora_local: datetime,
 ) -> str:
-    """Ejecuta AGENDAR, REAGENDAR o CANCELAR y devuelve el mensaje final al cliente."""
+    """Ejecuta AGENDAR, REAGENDAR, CANCELAR o CONTACTO y devuelve el mensaje final al cliente."""
+    if solicitud.accion == "CONTACTO":
+        return actualizar_contacto(db, negocio, id_cliente, solicitud.nombre, solicitud.correo, solicitud.telefono)
+
     if solicitud.accion == "CANCELAR":
         try:
             cita_cancelada = agenda_service.cancelar_cita_activa(db, negocio.id_negocio, id_cliente)
@@ -345,6 +388,86 @@ def procesar_solicitud(
         f"¡Listo! 🙌 Reservé *{servicio.nombre_servicio}* para el {cuando}.\n"
         f"Tu hora queda *pendiente* hasta que el equipo la confirme. "
         f"Te enviaremos un recordatorio el día antes y te pediremos confirmar 1 hora antes."
+    )
+
+
+def _telefono_legible(digitos: str) -> str:
+    """56981407529 -> +56 9 8140 7529 (otros formatos: +<dígitos>)."""
+    if len(digitos) == 11 and digitos.startswith("569"):
+        return f"+56 9 {digitos[3:7]} {digitos[7:]}"
+    return f"+{digitos}"
+
+
+def actualizar_contacto(
+    db: Session,
+    negocio: Negocio,
+    id_cliente: int,
+    nombre: str | None = None,
+    correo: str | None = None,
+    telefono: str | None = None,
+) -> str:
+    """Cambia los datos de contacto de la cita activa (a los que llegan los
+    recordatorios y la confirmación), avisa al negocio y devuelve el mensaje
+    para el cliente. Lo usan el agendado con IA ([[CONTACTO|...]]) y el
+    modo sin IA."""
+    from app.services import recordatorios  # evita import circular
+
+    if not any((nombre, correo, telefono)):
+        return "¿Qué dato quieres cambiar? Puedes enviarme el nuevo *teléfono*, *correo* o *nombre* para los recordatorios."
+    try:
+        cita, servicio, cambios = agenda_service.actualizar_contacto_cita_activa(
+            db, negocio.id_negocio, id_cliente, nombre=nombre, correo=correo, telefono=telefono
+        )
+    except SinCitaActivaError:
+        return (
+            "No tienes una hora agendada en este momento, así que no hay recordatorios que cambiar. "
+            "Si quieres reservar, dime qué servicio, día y hora prefieres."
+        )
+    except DatosContactoError as err:
+        malos = " y ".join(
+            {"correo": "el *correo*", "teléfono": "el *teléfono*", "nombre": "el *nombre*"}[c] for c in err.invalidos
+        )
+        ejemplo = " (ej. +56 9 1234 5678)" if "teléfono" in err.invalidos else ""
+        return f"Revisa {malos}{ejemplo}, parece que no está bien escrito. ¿Me lo envías de nuevo?"
+
+    cuando = f"*{_fecha_legible(cita.fecha_cita)}* a las *{cita.hora_cita:%H:%M}*"
+    if not cambios:
+        return (
+            f"Esos datos ya son los de tu hora de *{servicio.nombre_servicio}* del {cuando}, "
+            f"no hay nada que cambiar 🙌"
+        )
+
+    legibles = []
+    if "teléfono" in cambios:
+        legibles.append(f"teléfono: *{_telefono_legible(cambios['teléfono'])}*")
+    if "correo" in cambios:
+        legibles.append(f"correo: *{cambios['correo']}*")
+    if "nombre" in cambios:
+        legibles.append(f"nombre: *{cambios['nombre']}*")
+
+    cliente = db.query(Cliente).filter(Cliente.id_cliente == id_cliente).first()
+    quien = cita.nombre_contacto or (cliente.nombre_cliente if cliente else None) or "Un cliente"
+    recordatorios.crear_aviso(
+        db,
+        negocio.id_negocio,
+        "contacto_actualizado",
+        f"✏️ {quien} actualizó los datos de su cita de {servicio.nombre_servicio} "
+        f"({_fecha_legible(cita.fecha_cita)} {cita.hora_cita:%H:%M}): " + ", ".join(
+            texto.replace("*", "") for texto in legibles
+        ),
+        cita.id_agenda,
+    )
+
+    nota = ""
+    whatsapp_cliente = cliente.telefono if cliente else None
+    if "teléfono" in cambios and cambios["teléfono"] != whatsapp_cliente:
+        nota = (
+            "\nSi ese número todavía no nos ha escrito por WhatsApp, puede que los recordatorios "
+            "te lleguen solo por correo, así que mándanos un \"hola\" desde él."
+        )
+    return (
+        f"¡Listo! ✅ Actualicé los datos de tu hora de *{servicio.nombre_servicio}* del {cuando}: "
+        f"{', '.join(legibles)}.\nLos recordatorios y la confirmación te llegarán ahí.{nota}"
     )
 
 
