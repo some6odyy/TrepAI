@@ -14,9 +14,9 @@ Uso (desde la raíz del proyecto, con el venv activado):
     # Usa el DATABASE_URL del .env (o SQLite local si no hay)
     python -m scripts.limpiar_bd
 
-    # Apuntando explícitamente a la BD de producción (Neon):
+    # Apuntando explícitamente a la BD de producción (Supabase):
     #   PowerShell:
-    $env:DATABASE_URL="postgresql+psycopg://...neon.tech/...?sslmode=require"; python -m scripts.limpiar_bd
+    $env:DATABASE_URL="postgresql+psycopg://...pooler.supabase.com:5432/postgres?sslmode=require"; python -m scripts.limpiar_bd
     #   bash:
     DATABASE_URL="postgresql+psycopg://..." python -m scripts.limpiar_bd
 

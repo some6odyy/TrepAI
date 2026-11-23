@@ -37,8 +37,8 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 
 
-# create_all NO agrega columnas a tablas que ya existen (ej. la BD de Neon en
-# producción). Aquí se añaden las columnas nuevas si faltan.
+# create_all NO agrega columnas a tablas que ya existen (ej. la BD de Supabase
+# en producción). Aquí se añaden las columnas nuevas si faltan.
 _COLUMNAS_NUEVAS = [
     ("agenda", "fecha_creacion", "TIMESTAMP"),
     ("agenda", "nombre_contacto", "VARCHAR(100)"),

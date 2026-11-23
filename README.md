@@ -109,8 +109,8 @@ despliegue y después de cualquier cambio grande en los routers.
   `BORRAR` antes de ejecutar:
 
 ```powershell
-# PowerShell, apuntando a la BD de producción (Neon)
-$env:DATABASE_URL="postgresql+psycopg://usuario:clave@ep-xxxx.neon.tech/trepai?sslmode=require"
+# PowerShell, apuntando a la BD de producción (Supabase)
+$env:DATABASE_URL="postgresql+psycopg://postgres.[ref]:[clave]@aws-1-us-east-1.pooler.supabase.com:5432/postgres?sslmode=require"
 python -m scripts.limpiar_bd
 ```
 
@@ -275,21 +275,26 @@ Por eso el proyecto ahora soporta Postgres a través de la misma
 
 ### 1. Crear una base de datos Postgres gratuita
 
-La forma más simple es [Neon](https://neon.tech) (tiene un free tier
-generoso y lo usan un montón de proyectos que corren en Vercel):
+El proyecto usa [Supabase](https://supabase.com), que entrega una base
+PostgreSQL administrada con plan gratuito:
 
-1. Crea una cuenta en neon.tech y un proyecto nuevo.
-2. En el dashboard de Neon, copia el **Connection string** — viene como
-   `postgresql://usuario:clave@ep-xxxx.neon.tech/nombre_bd?sslmode=require`.
-3. Cámbiale el prefijo a `postgresql+psycopg://` (SQLAlchemy necesita
-   saber qué driver usar):
+1. Crea una cuenta en supabase.com y un proyecto nuevo. Anota la
+   contraseña de la base de datos que eliges al crearlo.
+2. En el panel del proyecto, botón **Connect**, copia la cadena del
+   **Session pooler** (puerto `5432` en `pooler.supabase.com`). Usa el
+   pooler y no la conexión directa: Vercel abre conexiones desde muchas
+   instancias serverless y el pooler las reparte. Viene como
+   `postgresql://postgres.[ref]:[clave]@aws-1-us-east-1.pooler.supabase.com:5432/postgres`.
+3. Reemplaza `[clave]` por la contraseña de la base, cámbiale el prefijo a
+   `postgresql+psycopg://` (SQLAlchemy necesita saber qué driver usar) y
+   agrega `?sslmode=require` al final:
    ```
-   postgresql+psycopg://usuario:clave@ep-xxxx.neon.tech/nombre_bd?sslmode=require
+   postgresql+psycopg://postgres.[ref]:[clave]@aws-1-us-east-1.pooler.supabase.com:5432/postgres?sslmode=require
    ```
    Esa es tu `DATABASE_URL` de producción.
 
-*(Alternativa: Vercel también ofrece Postgres directo desde la pestaña
-"Storage" de tu proyecto, sin salir del dashboard — mismo resultado.)*
+*(Cualquier otro PostgreSQL sirve igual, por ejemplo Neon o Vercel
+Postgres: solo cambia la `DATABASE_URL`, no el código.)*
 
 ### 2. Generar las claves propias (nunca uses las de ejemplo del repo)
 
@@ -324,7 +329,7 @@ derecha):
 
 | Variable | Valor |
 |---|---|
-| `DATABASE_URL` | El connection string de Neon del paso 1, con el prefijo `postgresql+psycopg://` |
+| `DATABASE_URL` | La cadena del Session pooler de Supabase del paso 1, con el prefijo `postgresql+psycopg://` |
 | `SECRET_KEY` | La que generaste en el paso 2 |
 | `ENCRYPTION_KEY` | La que generaste en el paso 2 |
 | `WHATSAPP_VERIFY_TOKEN` | Cualquier string que inventes (ej. `trepai_verify_2026`) — lo vas a volver a usar en el paso 6 |
@@ -337,7 +342,7 @@ derecha):
 | `PAUSA_BOT_MANUAL_HORAS` | Opcional (por defecto `2`): horas que el bot se calla en una conversación después de que respondes a mano |
 
 Dale **Deploy**. La primera vez que la función arranque, SQLAlchemy va a
-crear las tablas automáticamente en tu base Neon (mismo mecanismo que
+crear las tablas automáticamente en tu base de Supabase (mismo mecanismo que
 en local, solo que ahora apunta a Postgres).
 
 ### 5. Conseguir la API key del motor de IA
