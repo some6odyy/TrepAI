@@ -8,7 +8,8 @@
    en formularios y tablas.
    ========================================================================== */
 
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+/* Las fuentes se cargan desde index.html (<link> con preconnect), no con @import,
+   para no bloquear el primer pintado en conexiones móviles. */
 
 :root {
   --bg: #f6eedf;
@@ -1135,43 +1136,7 @@ tr:last-child td {
 }
 
 @media (max-width: 760px) {
-  .app-shell.visible {
-    grid-template-columns: 1fr;
-  }
-
-  .sidebar {
-    position: sticky;
-    top: 0;
-    z-index: 100;
-    height: auto;
-    flex-direction: row;
-    align-items: center;
-    overflow-x: auto;
-    padding: 12px 16px;
-    border-right: none;
-    border-bottom: 1px solid var(--border);
-  }
-
-  .sidebar nav {
-    flex-direction: row;
-    display: flex;
-    gap: 6px;
-    flex: initial;
-    width: 100%;
-  }
-
-  .sidebar .brand {
-    display: none;
-  }
-
-  .sidebar-footer {
-    display: none;
-  }
-
-  .nav-item {
-    white-space: nowrap;
-  }
-
+  /* El menú en pantallas angostas está en responsivo.css */
   .main {
     padding: 20px;
   }

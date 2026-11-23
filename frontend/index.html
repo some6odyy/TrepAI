@@ -4,9 +4,18 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#a6432b">
+  <link rel="icon"
+    href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23a6432b'/%3E%3Cpath d='M9 22c0-9 3-14 7-14s7 5 7 14' fill='%23fff'/%3E%3Cellipse cx='16' cy='22.5' rx='12' ry='3.4' fill='%23fff'/%3E%3C/svg%3E">
+  <meta name="description" content="TrepAI: panel del administrador para el asistente de WhatsApp de tu negocio.">
   <title>TrepAI · Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet"
+    href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
   <link rel="stylesheet" href="css/styles.css">
   <link rel="stylesheet" href="css/vista-v2.css">
+  <link rel="stylesheet" href="css/responsivo.css">
 </head>
 
 <body>
@@ -157,14 +166,14 @@
 
   <!-- ============ SHELL DEL DASHBOARD ============ -->
   <div class="app-shell" id="appShell">
-    <aside class="sidebar">
+    <aside class="sidebar" id="sidebar" aria-label="Menú principal">
       <div class="brand"><span class="logo-mark"><svg viewBox="0 0 24 24">
             <path d="M7 16.5C7 9.6 9.3 6 12 6c2.7 0 5 3.6 5 10.5" fill="currentColor" stroke="none" />
             <rect x="7.6" y="13.5" width="8.8" height="1.4" rx="0.7" fill="var(--brand)" />
             <ellipse cx="12" cy="16.6" rx="9.2" ry="2.6" fill="currentColor" stroke="none" />
           </svg></span>TrepAI</div>
-      <nav>
-        <div class="nav-item active" data-view="resumen">
+      <nav aria-label="Secciones del panel">
+        <button type="button" class="nav-item active" data-view="resumen" aria-current="page">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
             stroke-linejoin="round">
             <rect x="3" y="3" width="8" height="8" rx="2" />
@@ -173,8 +182,8 @@
             <rect x="13" y="13" width="8" height="8" rx="2" />
           </svg>
           Resumen
-        </div>
-        <div class="nav-item" data-view="contexto">
+        </button>
+        <button type="button" class="nav-item" data-view="contexto">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
             stroke-linejoin="round">
             <line x1="4" y1="6" x2="20" y2="6" />
@@ -185,8 +194,8 @@
             <circle cx="11" cy="18" r="2" fill="currentColor" stroke="none" />
           </svg>
           Contexto IA
-        </div>
-        <div class="nav-item" data-view="agenda">
+        </button>
+        <button type="button" class="nav-item" data-view="agenda">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
             stroke-linejoin="round">
             <rect x="3" y="5" width="18" height="16" rx="2" />
@@ -195,16 +204,16 @@
             <line x1="16" y1="2" x2="16" y2="6" />
           </svg>
           Agenda
-        </div>
-        <div class="nav-item" data-view="historial">
+        </button>
+        <button type="button" class="nav-item" data-view="historial">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
             stroke-linejoin="round">
             <path
               d="M21 11.5a8.4 8.4 0 0 1-8.9 8.4 8.5 8.5 0 0 1-4-1L3 20l1.1-5a8.4 8.4 0 0 1-1-4A8.4 8.4 0 0 1 11.5 3 8.5 8.5 0 0 1 21 11.5Z" />
           </svg>
           Historial
-        </div>
-        <div class="nav-item" data-view="clientes">
+        </button>
+        <button type="button" class="nav-item" data-view="clientes">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
             stroke-linejoin="round">
             <circle cx="9" cy="8" r="3.5" />
@@ -213,15 +222,15 @@
             <path d="M18.5 14.8c1.7.7 2.8 2.4 3 5.2" />
           </svg>
           Clientes
-        </div>
-        <div class="nav-item" data-view="cuenta">
+        </button>
+        <button type="button" class="nav-item" data-view="cuenta">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
             stroke-linejoin="round">
             <circle cx="12" cy="8" r="4" />
             <path d="M4 21c.8-4 4-6 8-6s7.2 2 8 6" />
           </svg>
           Mi cuenta
-        </div>
+        </button>
         <div class="sidebar-footer">
           <div class="negocio-nombre" id="sidebarNegocio">—</div>
           <div class="admin-correo" id="sidebarCorreo">—</div>
@@ -230,19 +239,32 @@
       </nav>
     </aside>
 
-    <div style="display:flex; flex-direction:column; min-width:0;">
+    <div class="menu-backdrop" id="menuBackdrop" hidden></div>
+
+    <div class="shell-main">
       <div class="topbar">
-        <div class="topbar-crumb" id="topbarNegocio">—</div>
+        <button type="button" class="menu-btn" id="btnMenu" aria-label="Abrir menú" aria-controls="sidebar"
+          aria-expanded="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <line x1="4" y1="7" x2="20" y2="7" />
+            <line x1="4" y1="12" x2="20" y2="12" />
+            <line x1="4" y1="17" x2="20" y2="17" />
+          </svg>
+        </button>
+        <div class="topbar-titulo">
+          <div class="topbar-crumb" id="topbarNegocio">—</div>
+          <div class="topbar-vista" id="topbarVista">Resumen</div>
+        </div>
         <div class="topbar-right">
           <span class="live-dot" id="liveDot" title="Actualización en vivo"><span></span>En vivo</span>
           <div class="avisos-wrap">
-            <button class="avisos-btn" id="btnAvisos" title="Avisos" aria-haspopup="true" aria-expanded="false">
+            <button class="avisos-btn" id="btnAvisos" title="Avisos" aria-label="Avisos" aria-haspopup="true" aria-expanded="false">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
                 stroke-linejoin="round">
                 <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
                 <path d="M13.7 21a2 2 0 0 1-3.4 0" />
               </svg>
-              <span class="avisos-count hidden" id="avisosCount">0</span>
+              <span class="avisos-count hidden" id="avisosCount" aria-hidden="true">0</span>
             </button>
             <div class="avisos-panel" id="avisosPanel" role="menu">
               <div class="avisos-head">
@@ -338,7 +360,7 @@
               <div class="sign-title" id="signTitle">Bot apagado</div>
               <div class="sign-sub">Cuando está encendido, TrepAI responde automáticamente en WhatsApp.</div>
             </div>
-            <div class="sign-switch" id="botSwitch" role="switch" aria-checked="false" tabindex="0"></div>
+            <div class="sign-switch" id="botSwitch" role="switch" aria-checked="false" tabindex="0" aria-label="Respuestas automáticas del bot"></div>
           </div>
 
           <div class="card">
@@ -414,9 +436,9 @@
               <p class="text-muted" style="font-size:13px">Meta permite como máximo 2 números mientras la cuenta no esté
                 verificada. Para liberar cupo, elimina los que no uses desde el Administrador de WhatsApp de Meta
                 (al terminar, vuelve y aprieta <b>Actualizar</b>).</p>
-              <table>
+              <table class="tabla-resp">
                 <thead>
-                  <tr><th>Número</th><th>Nombre</th><th>Estado</th><th></th></tr>
+                  <tr><th>Número</th><th>Nombre</th><th>Estado</th><th data-etiqueta=""><span class="sr-only">Acciones</span></th></tr>
                 </thead>
                 <tbody id="tablaNumerosWa">
                   <tr><td colspan="4" class="table-empty">Cargando…</td></tr>
@@ -515,13 +537,13 @@
               <div class="card-header">
                 <h2>Catálogo &amp; Precios</h2>
               </div>
-              <table>
+              <table class="tabla-resp">
                 <thead>
                   <tr>
                     <th>Servicio</th>
                     <th>Precio</th>
                     <th>Duración</th>
-                    <th></th>
+                    <th data-etiqueta=""><span class="sr-only">Acciones</span></th>
                   </tr>
                 </thead>
                 <tbody id="tablaServicios"></tbody>
@@ -712,7 +734,7 @@
             <div class="date-filter">
               <button class="btn btn-ghost btn-sm" id="btnHoy">Hoy</button>
               <input type="date" id="filtroFecha" class="input-sm" aria-label="Filtrar por fecha">
-              <button class="icon-btn hidden" id="btnLimpiarFecha" title="Quitar filtro"><svg class="i">
+              <button class="icon-btn hidden" id="btnLimpiarFecha" title="Quitar filtro" aria-label="Quitar filtro de fecha"><svg class="i">
                   <use href="#i-x" />
                 </svg></button>
             </div>
@@ -744,7 +766,7 @@
 
             <section class="inbox-chat" id="cardMensajes">
               <header class="chat-head">
-                <button class="icon-btn only-mobile" id="btnCerrarMensajes" title="Volver"><svg class="i">
+                <button class="icon-btn only-mobile" id="btnCerrarMensajes" title="Volver" aria-label="Volver a la lista de conversaciones"><svg class="i">
                     <use href="#i-back" />
                   </svg></button>
                 <div class="avatar avatar-sm" id="chatAvatar">?</div>
@@ -768,7 +790,7 @@
               <div class="chat-nota hidden" id="chatNotaPausa">Al responder tú, el bot se pausa en esta conversación para no contestar encima.</div>
               <form class="chat-composer hidden" id="formResponder" autocomplete="off">
                 <textarea id="respuestaTexto" rows="1" maxlength="4000"
-                  placeholder="Escribe una respuesta para el cliente…" required></textarea>
+                  placeholder="Escribe tu respuesta…" aria-label="Respuesta para el cliente" required></textarea>
                 <button type="submit" class="btn btn-primary" id="btnEnviarRespuesta">Enviar</button>
               </form>
               <div class="chat-cerrado hidden" id="chatCerrado">
@@ -856,10 +878,10 @@
 
   <!-- Panel lateral: agendar manualmente -->
   <div class="drawer-backdrop vista-v2" id="drawerCita">
-    <aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="drawerTitulo">
+    <div class="drawer" role="dialog" aria-modal="true" aria-labelledby="drawerTitulo">
       <header class="drawer-head">
         <h2 id="drawerTitulo">Agendar manualmente</h2>
-        <button class="icon-btn" data-close-drawer title="Cerrar"><svg class="i">
+        <button class="icon-btn" data-close-drawer title="Cerrar" aria-label="Cerrar panel"><svg class="i">
             <use href="#i-x" />
           </svg></button>
       </header>
@@ -894,15 +916,15 @@
           un aviso al agendar, un recordatorio el día antes y un mensaje para confirmar 1 hora antes.</p>
         <button type="submit" class="btn btn-primary btn-block" id="btnGuardarCita">Agendar cita</button>
       </form>
-    </aside>
+    </div>
   </div>
 
   <!-- Panel lateral: bloquear horarios -->
   <div class="drawer-backdrop vista-v2" id="drawerBloqueo">
-    <aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="bloqueoTitulo">
+    <div class="drawer" role="dialog" aria-modal="true" aria-labelledby="bloqueoTitulo">
       <header class="drawer-head">
         <h2 id="bloqueoTitulo">Bloquear horario</h2>
-        <button class="icon-btn" data-close-drawer title="Cerrar"><svg class="i">
+        <button class="icon-btn" data-close-drawer title="Cerrar" aria-label="Cerrar panel"><svg class="i">
             <use href="#i-x" />
           </svg></button>
       </header>
@@ -957,12 +979,12 @@
       </form>
       <h3 class="drawer-sub">Horarios bloqueados</h3>
       <div id="listaBloqueos" class="lista-bloqueos"></div>
-    </aside>
+    </div>
   </div>
 
   <!-- Panel lateral: ficha del cliente -->
   <div class="drawer-backdrop vista-v2" id="drawerCliente">
-    <aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="fichaNombre">
+    <div class="drawer" role="dialog" aria-modal="true" aria-labelledby="fichaNombre">
       <header class="drawer-head">
         <div class="ficha-head">
           <span class="avatar" id="fichaAvatar">?</span>
@@ -971,7 +993,7 @@
             <small class="text-muted" id="fichaContacto"></small>
           </div>
         </div>
-        <button class="icon-btn" data-close-drawer title="Cerrar"><svg class="i">
+        <button class="icon-btn" data-close-drawer title="Cerrar" aria-label="Cerrar panel"><svg class="i">
             <use href="#i-x" />
           </svg></button>
       </header>
@@ -986,7 +1008,7 @@
       <h3 class="drawer-sub">Citas</h3>
       <div id="fichaCitas" class="ficha-citas"></div>
       <button class="btn btn-block hidden" id="btnFichaConversacion" type="button" style="margin-top:16px">Ver conversación</button>
-    </aside>
+    </div>
   </div>
 
   <!-- Diálogo de confirmación -->

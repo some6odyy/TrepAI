@@ -153,10 +153,23 @@ function mostrarPantallaDashboard() {
   document.getElementById('appShell').classList.add('visible');
 }
 
+const TITULOS_VISTA = {
+  resumen: 'Resumen', contexto: 'Contexto IA', agenda: 'Agenda',
+  historial: 'Historial', clientes: 'Clientes', cuenta: 'Mi cuenta',
+};
+
 function cambiarVista(nombreVista) {
   document.querySelectorAll('.nav-item').forEach((el) => {
-    el.classList.toggle('active', el.dataset.view === nombreVista);
+    const activo = el.dataset.view === nombreVista;
+    el.classList.toggle('active', activo);
+    if (activo) el.setAttribute('aria-current', 'page');
+    else el.removeAttribute('aria-current');
   });
+  const titulo = document.getElementById('topbarVista');
+  if (titulo) titulo.textContent = TITULOS_VISTA[nombreVista] || '';
+  document.title = `${TITULOS_VISTA[nombreVista] || 'Dashboard'} · TrepAI`;
+  cerrarMenu();
+  if (esPantallaAngosta()) window.scrollTo({ top: 0 });
   document.querySelectorAll('.view').forEach((el) => {
     el.classList.toggle('active', el.id === `view${capitalizar(nombreVista)}`);
   });
@@ -316,6 +329,91 @@ async function cargarTiempoRespuesta() {
 
 document.querySelectorAll('.nav-item').forEach((item) => {
   item.addEventListener('click', () => cambiarVista(item.dataset.view));
+});
+
+/* Menú deslizable en pantallas angostas (≤ 900 px): botón ☰ de la barra superior */
+function esPantallaAngosta() { return window.matchMedia('(max-width: 900px)').matches; }
+
+function bloquearScroll() {
+  const algoAbierto = document.getElementById('sidebar')?.classList.contains('open')
+    || document.querySelector('.drawer-backdrop.open, .modal-backdrop.open');
+  document.body.classList.toggle('sin-scroll', Boolean(algoAbierto));
+}
+
+function abrirMenu() {
+  const sidebar = document.getElementById('sidebar');
+  const fondo = document.getElementById('menuBackdrop');
+  if (!sidebar || !esPantallaAngosta()) return;
+  sidebar.classList.add('open');
+  fondo.hidden = false;
+  requestAnimationFrame(() => fondo.classList.add('open'));
+  document.getElementById('btnMenu').setAttribute('aria-expanded', 'true');
+  document.getElementById('btnMenu').setAttribute('aria-label', 'Cerrar menú');
+  bloquearScroll();
+  (sidebar.querySelector('.nav-item.active') || sidebar.querySelector('.nav-item'))?.focus();
+}
+
+function cerrarMenu({ devolverFoco = false } = {}) {
+  const sidebar = document.getElementById('sidebar');
+  const fondo = document.getElementById('menuBackdrop');
+  if (!sidebar || !sidebar.classList.contains('open')) return;
+  sidebar.classList.remove('open');
+  fondo.classList.remove('open');
+  setTimeout(() => { if (!sidebar.classList.contains('open')) fondo.hidden = true; }, 250);
+  const boton = document.getElementById('btnMenu');
+  boton.setAttribute('aria-expanded', 'false');
+  boton.setAttribute('aria-label', 'Abrir menú');
+  bloquearScroll();
+  if (devolverFoco) boton.focus();
+}
+
+document.getElementById('btnMenu')?.addEventListener('click', () => {
+  if (document.getElementById('sidebar').classList.contains('open')) cerrarMenu({ devolverFoco: true });
+  else abrirMenu();
+});
+document.getElementById('menuBackdrop')?.addEventListener('click', () => cerrarMenu({ devolverFoco: true }));
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') cerrarMenu({ devolverFoco: true });
+  // Mantiene el foco dentro del menú abierto (Tab y Shift+Tab)
+  const sidebar = document.getElementById('sidebar');
+  if (e.key === 'Tab' && sidebar?.classList.contains('open')) {
+    const focusables = [...sidebar.querySelectorAll('button, a[href], input, select, textarea')].filter((el) => !el.disabled);
+    const primero = focusables[0];
+    const ultimo = focusables[focusables.length - 1];
+    if (e.shiftKey && document.activeElement === primero) { e.preventDefault(); ultimo.focus(); }
+    else if (!e.shiftKey && document.activeElement === ultimo) { e.preventDefault(); primero.focus(); }
+  }
+});
+// Si la pantalla se agranda con el menú abierto (girar el teléfono), se cierra
+window.matchMedia('(max-width: 900px)').addEventListener?.('change', () => { if (!esPantallaAngosta()) cerrarMenu(); });
+
+// Los paneles laterales y diálogos también bloquean el desplazamiento del fondo
+new MutationObserver(bloquearScroll).observe(document.body, {
+  subtree: true, attributes: true, attributeFilter: ['class'],
+});
+
+/* Tablas que en el celular se muestran como tarjetas: cada celda lleva el
+   nombre de su columna (data-label), tomado del encabezado de la tabla. */
+function etiquetarTabla(tabla) {
+  const nombres = [...tabla.querySelectorAll('thead th')].map((th) => th.dataset.etiqueta ?? th.textContent.trim());
+  tabla.querySelectorAll('tbody tr').forEach((tr) => {
+    [...tr.children].forEach((td, i) => {
+      if (!td.hasAttribute('colspan') && td.dataset.label === undefined) td.dataset.label = nombres[i] || '';
+    });
+  });
+}
+document.querySelectorAll('table.tabla-resp').forEach((tabla) => {
+  etiquetarTabla(tabla);
+  new MutationObserver(() => etiquetarTabla(tabla)).observe(tabla.querySelector('tbody'), { childList: true });
+});
+
+/* Bloques de Contexto IA: también se abren con el teclado (Enter o espacio) */
+document.querySelectorAll('.block-card').forEach((card) => {
+  card.setAttribute('role', 'button');
+  card.setAttribute('tabindex', '0');
+  card.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); card.click(); }
+  });
 });
 
 /* ------------------------- Resumen: perfil + bot ------------------------- */
@@ -840,8 +938,8 @@ function renderizarAgenda() {
                 ${ESTADOS_CITA.map((e) => `<option value="${e}" ${e === c.estado_cita ? 'selected' : ''}>${ETIQUETA_ESTADO[e]}</option>`).join('')}
               </select>
               <span class="acciones">
-                <button class="icon-btn" data-editar-cita="${c.id_agenda}" title="Editar">${icono('edit')}</button>
-                <button class="icon-btn danger" data-eliminar-cita="${c.id_agenda}" title="Eliminar">${icono('trash')}</button>
+                <button class="icon-btn" data-editar-cita="${c.id_agenda}" title="Editar" aria-label="Editar cita">${icono('edit')}</button>
+                <button class="icon-btn danger" data-eliminar-cita="${c.id_agenda}" title="Eliminar" aria-label="Eliminar cita">${icono('trash')}</button>
               </span>
             </article>`).join('')}
         </div>
@@ -1002,7 +1100,7 @@ function renderizarBloqueos() {
           <small>${escapeHtml(b.descripcion)}</small>
           ${b.citas_afectadas ? `<small class="aviso-citas">${b.citas_afectadas} cita${b.citas_afectadas === 1 ? '' : 's'} agendada${b.citas_afectadas === 1 ? '' : 's'} en este horario: muévela${b.citas_afectadas === 1 ? '' : 's'} o cancéla${b.citas_afectadas === 1 ? 'la' : 'las'}.</small>` : ''}
         </div>
-        <button class="icon-btn danger" type="button" data-quitar-bloqueo="${b.id_bloqueo}" title="Quitar bloqueo">${icono('trash')}</button>
+        <button class="icon-btn danger" type="button" data-quitar-bloqueo="${b.id_bloqueo}" title="Quitar bloqueo" aria-label="Quitar bloqueo">${icono('trash')}</button>
       </div>`).join('');
   $$('[data-quitar-bloqueo]').forEach((btn) => btn.addEventListener('click', async () => {
     if (!(await confirmar({ titulo: '¿Quitar este bloqueo?', texto: 'Esos horarios vuelven a quedar disponibles para agendar.', boton: 'Quitar' }))) return;
@@ -1135,7 +1233,12 @@ async function abrirMensajes(conv, { silencioso = false } = {}) {
 
     estado.conversacionActiva = conv.id_conversacion;
     estado.mensajesActivos = mensajes.length;
-    $('mensajesTitulo').textContent = `Conversación con ${nombreVisible(conv)}`;
+    const titulo = $('mensajesTitulo');
+    titulo.textContent = '';
+    const prefijo = document.createElement('span');
+    prefijo.className = 'solo-escritorio';
+    prefijo.textContent = 'Conversación con ';
+    titulo.append(prefijo, nombreVisible(conv));
     $('chatSub').textContent = `${formatoTelefono(conv.telefono_cliente)} · ${mensajes.length} ${mensajes.length === 1 ? 'mensaje' : 'mensajes'}`;
     $('chatAvatar').textContent = iniciales(conv.nombre_cliente);
 
@@ -1451,6 +1554,7 @@ function actualizarAvisos(avisos) {
   const total = estado.avisos.length;
   $('avisosCount').textContent = total > 9 ? '9+' : String(total);
   $('avisosCount').classList.toggle('hidden', total === 0);
+  $('btnAvisos').setAttribute('aria-label', total ? `Avisos (${total > 9 ? '9+' : total} sin leer)` : 'Avisos');
 
   // Los avisos nuevos (desde la última consulta) también salen como toast
   const nuevos = estado.avisos.filter((a) => a.id_aviso > estado.ultimoAvisoVisto);

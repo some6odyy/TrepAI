@@ -6,6 +6,7 @@ WhatsApp usando IA (ver informe TSI, Grupo 7).
 from fastapi import FastAPI
 from sqlalchemy import inspect, text
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
 
@@ -30,6 +31,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# Comprime las respuestas grandes (Dashboard, CSS y JS): en una conexión móvil
+# la página carga más rápido (RNF-03).
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 
 
