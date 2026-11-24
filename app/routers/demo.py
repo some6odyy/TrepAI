@@ -282,6 +282,7 @@ def estado_casos_de_uso(
             "citas_activas": len(activas),
             "clientes_con_varias_citas": sum(1 for n in por_cliente.values() if n > 1),
             "total_citas": citas.count(),
+            "canceladas": citas.filter(Agenda.estado_cita == "cancelada").count(),
         },
         # Solo el id (sin datos): la demo intenta leerlo y debe recibir 403
         "id_otro_negocio": otro[0] if otro else None,

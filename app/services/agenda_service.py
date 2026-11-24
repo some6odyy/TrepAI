@@ -537,3 +537,14 @@ def cancelar_cita_activa(
     db.commit()
     db.refresh(cita)
     return cita
+
+
+def cancelar_todas_citas_cliente(db: Session, id_negocio: int, id_cliente: int) -> list[tuple[Agenda, Servicio]]:
+    """Cancela TODAS las citas activas del cliente ("cancela todas mis horas")."""
+    activas = citas_activas_cliente(db, id_negocio, id_cliente)
+    if not activas:
+        raise SinCitaActivaError("No tienes citas activas para cancelar.")
+    for cita, _ in activas:
+        cita.estado_cita = "cancelada"
+    db.commit()
+    return activas

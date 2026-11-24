@@ -87,8 +87,8 @@ const api = {
 
   listarCitas: (id, fecha) => apiFetch(`/negocio/${id}/agenda${fecha ? `?fecha=${fecha}` : ''}`),
   crearCita: (id, datos) => apiFetch(`/negocio/${id}/agenda`, { method: 'POST', body: datos }),
-  actualizarEstadoCita: (id, idAgenda, estado) =>
-    apiFetch(`/negocio/${id}/agenda/${idAgenda}/estado`, { method: 'PATCH', body: { estado_cita: estado } }),
+  actualizarEstadoCita: (id, idAgenda, estado, extra = {}) =>
+    apiFetch(`/negocio/${id}/agenda/${idAgenda}/estado`, { method: 'PATCH', body: { estado_cita: estado, ...extra } }),
   eliminarCita: (id, idAgenda) => apiFetch(`/negocio/${id}/agenda/${idAgenda}`, { method: 'DELETE' }),
   editarCita: (id, idAgenda, datos) => apiFetch(`/negocio/${id}/agenda/${idAgenda}`, { method: 'PUT', body: datos }),
 

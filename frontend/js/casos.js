@@ -57,6 +57,7 @@ function guionDemo() {
     { etiqueta: 'Menos de 2 h', cu: 'AG-01', tel: t2,
       texto: `${s1} hoy a las ${String(enUnaHora.getHours()).padStart(2, '0')}:00. Soy Otra Persona, otra@trepai.cl, +56 9 0000 0002` },
     { etiqueta: 'Cancelar una', cu: 'AG-05', tel: t1, texto: `Cancela el ${s2}` },
+    { etiqueta: 'Cancelar todas', cu: 'AG-05', tel: t1, texto: 'Cancela todas mis horas' },
   ];
 }
 
@@ -316,12 +317,13 @@ function definicionCasos(e) {
       ],
     },
     {
-      codigo: 'AG-05', grupo: 'ag', titulo: 'Cancelar y recordatorios', actor: 'Usuario final',
-      desc: 'Cancela una cita específica. Recordatorio al agendar y 24 h antes; confirmación 1 h antes.',
+      codigo: 'AG-05', grupo: 'ag', titulo: 'Cancelar horas', actor: 'Usuario final / Administrador',
+      desc: 'El cliente cancela una o todas sus horas por WhatsApp (aunque el agendado automático esté apagado) y el negocio recibe un aviso. El negocio también puede cancelar desde la Agenda y el cliente se entera.',
       estado: _ok(true, 'Disponible'),
-      evidencia: 'Los recordatorios salen por WhatsApp y correo a los datos de contacto de cada cita.',
+      evidencia: `Canceladas en el negocio: ${e.agenda.canceladas ?? 0}\nTambién: responder NO a la confirmación de 1 h antes.`,
       acciones: [
         { t: 'Cancelar una', primario: true, fn: () => correrPaso(9) },
+        { t: 'Cancelar todas', fn: () => correrPaso(10) },
         { t: 'Ir a Agenda', fn: () => cambiarVista('agenda') },
       ],
     },

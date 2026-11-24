@@ -159,3 +159,68 @@ def test_cita_pasada_no_cuenta_como_activa():
     r = enviar(idn, "[[CANCELAR]]")
     assert "No tienes ninguna cita activa" in r, r
     AHORA = original
+
+
+def test_cancelar_horas():
+    from app.services import recordatorios, email_service, notificacion_service
+    enviados = []
+    email_service.enviar_correo = lambda destino, asunto, *a, **k: enviados.append(("correo", destino, asunto)) or True
+    notificacion_service.enviar_whatsapp_cloud = lambda neg, tel, texto: enviados.append(("wsp", tel, texto)) or True
+    notificacion_service.enviar_plantilla_cloud = lambda *a, **k: True
+
+    h, idn = preparar("cancelar@t.cl")
+    enviar(idn, "[[AGENDAR|Degradado|2026-11-27|14:00" + DATOS + "]]")
+    enviar(idn, "[[AGENDAR|Perfilado de barba|2026-11-28|11:00]]")
+    enviar(idn, "[[AGENDAR|Degradado|2026-11-30|12:00]]")
+
+    # Con el agendado automático APAGADO igual se puede cancelar (IA y sin IA)
+    c.put(f"/negocio/{idn}/contexto", headers=h, json={"agendar_automatico": False})
+    capturado = {}
+    def ia(prompt, provider=None, model=None):
+        capturado["p"] = prompt
+        return "[[CANCELAR|TODAS]]" if "todas" in prompt.lower().split("nuevo mensaje del cliente:")[-1] else "ok"
+    ai_service.generar_respuesta_o_none = ia
+    citas = activas(h, idn)
+    r = enviar(idn, f"[[CANCELAR|#{citas[2]['id_agenda']}]]", "cancela la del lunes")
+    assert "cancelé tu cita de *Degradado* del lunes 30-11" in r and "Sigues teniendo" in r, r
+    r = enviar(idn, None, "cancela la barba")
+    assert "cancelé tu cita de *Perfilado de barba*" in r, r
+    assert len(activas(h, idn)) == 1
+
+    # El negocio recibe un aviso por cada cancelación
+    avisos = c.get(f"/negocio/{idn}/novedades", headers=h).json()
+    textos = str(avisos)
+    assert textos.count("canceló por WhatsApp") >= 2, textos
+
+    # Cancelar TODAS
+    c.put(f"/negocio/{idn}/contexto", headers=h, json={"agendar_automatico": True})
+    enviar(idn, "[[AGENDAR|Perfilado de barba|2026-11-28|11:00]]")
+    assert len(activas(h, idn)) == 2
+    r = enviar(idn, "[[CANCELAR|TODAS]]", "cancela todas mis horas")
+    assert "cancelé tus 2 horas" in r, r
+    assert activas(h, idn) == []
+    r = enviar(idn, None, "cancela mi hora")
+    assert "No tienes ninguna cita activa" in r, r
+
+    # Sin IA: "cancela todas"
+    enviar(idn, "[[AGENDAR|Degradado|2026-11-27|14:00" + DATOS + "]]")
+    enviar(idn, "[[AGENDAR|Perfilado de barba|2026-11-28|11:00]]")
+    r = enviar(idn, None, "cancela todas mis horas")
+    assert "cancelé tus 2 horas" in r, r
+
+    # El negocio cancela desde la Agenda: se le avisa al cliente (correo + WhatsApp)
+    enviar(idn, "[[AGENDAR|Degradado|2026-11-27|16:00" + DATOS + "]]")
+    cita = activas(h, idn)[0]
+    enviados.clear()
+    r = c.patch(f"/negocio/{idn}/agenda/{cita['id_agenda']}/estado", headers=h,
+                json={"estado_cita": "cancelada", "motivo": "el barbero está enfermo"})
+    assert r.status_code == 200 and r.json()["estado_cita"] == "cancelada"
+    assert any(t == "correo" and "Hora cancelada" in asunto for t, _, asunto in enviados), enviados
+    assert any(t == "wsp" and "el barbero está enfermo" in txt for t, _, txt in enviados), enviados
+    # Sin aviso si el dueño lo desmarca
+    enviar(idn, "[[AGENDAR|Degradado|2026-11-27|17:00" + DATOS + "]]")
+    cita = activas(h, idn)[0]
+    enviados.clear()
+    c.patch(f"/negocio/{idn}/agenda/{cita['id_agenda']}/estado", headers=h,
+            json={"estado_cita": "cancelada", "avisar_cliente": False})
+    assert enviados == []

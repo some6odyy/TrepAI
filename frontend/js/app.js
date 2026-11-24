@@ -939,6 +939,7 @@ function renderizarAgenda() {
                 ${ESTADOS_CITA.map((e) => `<option value="${e}" ${e === c.estado_cita ? 'selected' : ''}>${ETIQUETA_ESTADO[e]}</option>`).join('')}
               </select>
               <span class="acciones">
+                ${['pendiente', 'confirmada'].includes(c.estado_cita) ? `<button class="icon-btn danger" data-cancelar-cita="${c.id_agenda}" title="Cancelar hora" aria-label="Cancelar hora">${icono('x')}</button>` : ''}
                 <button class="icon-btn" data-editar-cita="${c.id_agenda}" title="Editar" aria-label="Editar cita">${icono('edit')}</button>
                 <button class="icon-btn danger" data-eliminar-cita="${c.id_agenda}" title="Eliminar" aria-label="Eliminar cita">${icono('trash')}</button>
               </span>
@@ -949,6 +950,11 @@ function renderizarAgenda() {
 
   $$('[data-cambiar-estado]', cont).forEach((select) => {
     select.addEventListener('change', async () => {
+      const cita = estado.citas.find((c) => String(c.id_agenda) === select.dataset.cambiarEstado);
+      if (select.value === 'cancelada' && cita && ['pendiente', 'confirmada'].includes(cita.estado_cita)) {
+        await cancelarCitaDesdeAgenda(cita);
+        return;
+      }
       try {
         await api.actualizarEstadoCita(estado.negocio.id_negocio, select.dataset.cambiarEstado, select.value);
         mostrarToast('Estado actualizado');
@@ -957,6 +963,13 @@ function renderizarAgenda() {
         mostrarToast(error.message, 'error');
         cargarAgenda();
       }
+    });
+  });
+
+  $$('[data-cancelar-cita]', cont).forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const cita = estado.citas.find((c) => String(c.id_agenda) === btn.dataset.cancelarCita);
+      if (cita) cancelarCitaDesdeAgenda(cita);
     });
   });
 
@@ -980,6 +993,45 @@ function renderizarAgenda() {
       }
     });
   });
+}
+
+/* Cancelar una hora: pide motivo opcional y avisa al cliente (WhatsApp + correo) */
+function pedirCancelacion(cita) {
+  return new Promise((resolve) => {
+    const modal = $('modalCancelarCita');
+    const cuando = new Date(`${cita.fecha_cita}T12:00:00`).toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' });
+    $('cancelarTexto').textContent =
+      `${cita.nombre_servicio} de ${cita.nombre_cliente || cita.telefono_cliente}, ${cuando} a las ${cita.hora_cita.slice(0, 5)}. El horario queda libre.`;
+    $('cancelarMotivo').value = '';
+    $('cancelarAvisar').checked = true;
+    modal.classList.add('open');
+    $('cancelarMotivo').focus();
+    const cerrar = (valor) => {
+      modal.classList.remove('open');
+      $('cancelarSi').onclick = $('cancelarNo').onclick = modal.onclick = null;
+      document.removeEventListener('keydown', onKey);
+      resolve(valor);
+    };
+    const onKey = (e) => { if (e.key === 'Escape') cerrar(null); };
+    $('cancelarSi').onclick = () => cerrar({ motivo: $('cancelarMotivo').value.trim() || null, avisar_cliente: $('cancelarAvisar').checked });
+    $('cancelarNo').onclick = () => cerrar(null);
+    modal.onclick = (e) => { if (e.target === modal) cerrar(null); };
+    document.addEventListener('keydown', onKey);
+  });
+}
+
+async function cancelarCitaDesdeAgenda(cita) {
+  const datos = await pedirCancelacion(cita);
+  if (datos) {
+    try {
+      await api.actualizarEstadoCita(estado.negocio.id_negocio, cita.id_agenda, 'cancelada', datos);
+      mostrarToast(datos.avisar_cliente ? 'Hora cancelada: le avisamos al cliente' : 'Hora cancelada');
+      cargarEstadisticasResumen();
+    } catch (error) {
+      mostrarToast(error.message, 'error');
+    }
+  }
+  cargarAgenda();
 }
 
 $$('#filtroEstados .chip').forEach((chip) => {

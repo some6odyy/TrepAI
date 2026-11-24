@@ -55,8 +55,10 @@ _RE_REAGENDAR_SIN_SERVICIO = re.compile(
     r"(?:\|\s*#?(?P<id>\d+)\s*)?\]\]",
     re.IGNORECASE,
 )
-# [[CANCELAR]] o [[CANCELAR|<id de la cita>]] (cuando el cliente tiene varias)
-_RE_CANCELAR = re.compile(r"\[\[\s*CANCELAR\s*(?:\|\s*#?(?P<id>\d+)\s*)?\]\]", re.IGNORECASE)
+# [[CANCELAR]], [[CANCELAR|<id de la cita>]] o [[CANCELAR|TODAS]]
+_RE_CANCELAR = re.compile(
+    r"\[\[\s*CANCELAR\s*(?:\|\s*(?:#?(?P<id>\d+)|(?P<todas>TODAS?))\s*)?\]\]", re.IGNORECASE
+)
 _RE_ID = re.compile(r"^#?\s*(\d+)$")
 # Cambiar los datos de contacto de la cita activa: [[CONTACTO|nombre|correo|teléfono]]
 # ("-" o vacío = ese dato no cambia)
@@ -83,6 +85,8 @@ class SolicitudCita:
     id_cita: int | None = None
     # True si nombre/correo/teléfono se tomaron de otra cita activa del cliente
     contacto_reutilizado: bool = False
+    # CANCELAR todas las citas activas del cliente
+    todas: bool = False
 
 
 def instruccion_contacto() -> str:
@@ -96,6 +100,17 @@ def instruccion_contacto() -> str:
         "[[CONTACTO|<nombre o ->|<correo o ->|<teléfono con código de país o ->]]\n"
         "  Usa - en los datos que NO cambian. Ejemplo: [[CONTACTO|-|-|56981407529]]\n"
         "  Si dice \"este número\" o \"este mismo\", usa el WhatsApp desde el que escribe.\n"
+    )
+
+
+def instruccion_cancelar() -> str:
+    """Cómo cancelar. El cliente puede cancelar sus horas por WhatsApp aunque
+    el agendado automático esté apagado (la cita pudo crearla el local)."""
+    return (
+        "- CANCELAR HORA (el cliente pide anular una cita que ya tiene): responde ÚNICAMENTE con "
+        "[[CANCELAR|<#id de la cita>]] (ej. [[CANCELAR|#12]]). Si pide cancelar TODAS sus horas, usa "
+        "[[CANCELAR|TODAS]]. Si tiene varias y no dice cuál, pregúntale primero. Si solo dice que llegará "
+        "tarde o duda, NO canceles: pregúntale si quiere cancelar o cambiar la hora.\n"
     )
 
 
@@ -125,8 +140,7 @@ def instrucciones_para_prompt() -> str:
         "  Ejemplo: [[REAGENDAR|Degradado|2026-11-14|17:30|#12]]\n"
         "  Si tiene varias citas y no queda claro cuál quiere mover, pregúntale cuál antes de usar el marcador.\n"
         "  Si no está claro si quiere MOVER una cita o agendar OTRA adicional, pregúntale.\n"
-        "- CANCELAR HORA: responde ÚNICAMENTE con [[CANCELAR|<#id de la cita>]] (ej. [[CANCELAR|#12]]). "
-        "Si tiene varias y no dice cuál, pregúntale primero.\n"
+        f"{instruccion_cancelar()}"
         f"{instruccion_contacto()}"
         "- El sistema ejecuta la acción en la base de datos y responde al cliente; nunca digas tú "
         "que la hora quedó reservada, cambiada o cancelada ni inventes disponibilidad."
@@ -156,7 +170,9 @@ def extraer_solicitud(texto: str) -> tuple[str, SolicitudCita | None]:
     cancelar = _RE_CANCELAR.search(raw)
     if cancelar:
         limpio = _RE_CANCELAR.sub("", raw).strip()
-        return limpio, SolicitudCita(accion="CANCELAR", id_cita=int(cancelar["id"]) if cancelar["id"] else None)
+        return limpio, SolicitudCita(
+            accion="CANCELAR", id_cita=int(cancelar["id"]) if cancelar["id"] else None, todas=bool(cancelar["todas"])
+        )
 
     coincidencia = _RE_CITA.search(raw)
     if coincidencia:
@@ -310,21 +326,7 @@ def procesar_solicitud(
         return actualizar_contacto(db, negocio, id_cliente, solicitud.nombre, solicitud.correo, solicitud.telefono)
 
     if solicitud.accion == "CANCELAR":
-        servicios_neg = db.query(Servicio).filter(Servicio.id_negocio == negocio.id_negocio).all()
-        servicio_nombrado = buscar_servicio(solicitud.servicio, servicios_neg) if solicitud.servicio else None
-        try:
-            cita_cancelada = agenda_service.cancelar_cita_activa(
-                db, negocio.id_negocio, id_cliente, id_agenda=solicitud.id_cita, servicio=servicio_nombrado
-            )
-        except SinCitaActivaError:
-            return "No tienes ninguna cita activa para cancelar. Si quieres agendar una hora nueva, dime qué servicio, día y hora prefieres."
-        except CitaAmbiguaError as err:
-            return _mensaje_cual_cita(err.citas, "cancelar")
-
-        servicio = db.query(Servicio).filter(Servicio.id_servicio == cita_cancelada.id_servicio).first()
-        nombre_serv = servicio.nombre_servicio if servicio else "tu servicio"
-        cuando = f"*{_fecha_legible(cita_cancelada.fecha_cita)}* a las *{cita_cancelada.hora_cita:%H:%M}*"
-        return f"Listo, cancelé tu cita de *{nombre_serv}* del {cuando}. Cuando quieras volver a agendar, escríbeme."
+        return cancelar_por_chat(db, negocio, id_cliente, solicitud)
 
     servicios = db.query(Servicio).filter(Servicio.id_negocio == negocio.id_negocio).all()
     ahora = ahora_local.replace(tzinfo=None)
@@ -476,6 +478,58 @@ def procesar_solicitud(
         f"Tu hora queda *pendiente* hasta que el equipo la confirme. "
         f"Te enviaremos un recordatorio el día antes y te pediremos confirmar 1 hora antes.{nota_total}"
     )
+
+
+def cancelar_por_chat(db: Session, negocio: Negocio, id_cliente: int, solicitud: SolicitudCita) -> str:
+    """El cliente cancela una (o todas) sus horas por WhatsApp: se libera el
+    horario, se avisa al negocio en la campana y se le responde al cliente."""
+    from app.services import recordatorios  # evita import circular
+
+    sin_citas = (
+        "No tienes ninguna cita activa para cancelar. Si quieres agendar una hora nueva, "
+        "dime qué servicio, día y hora prefieres."
+    )
+    if solicitud.todas:
+        try:
+            canceladas = agenda_service.cancelar_todas_citas_cliente(db, negocio.id_negocio, id_cliente)
+        except SinCitaActivaError:
+            return sin_citas
+    else:
+        servicios_neg = db.query(Servicio).filter(Servicio.id_negocio == negocio.id_negocio).all()
+        servicio_nombrado = buscar_servicio(solicitud.servicio, servicios_neg) if solicitud.servicio else None
+        try:
+            cita = agenda_service.cancelar_cita_activa(
+                db, negocio.id_negocio, id_cliente, id_agenda=solicitud.id_cita, servicio=servicio_nombrado
+            )
+        except SinCitaActivaError:
+            return sin_citas
+        except CitaAmbiguaError as err:
+            return _mensaje_cual_cita(err.citas, "cancelar")
+        servicio = db.query(Servicio).filter(Servicio.id_servicio == cita.id_servicio).first()
+        canceladas = [(cita, servicio)]
+
+    cliente = db.query(Cliente).filter(Cliente.id_cliente == id_cliente).first()
+    for cita, servicio in canceladas:
+        quien = cita.nombre_contacto or (cliente.nombre_cliente if cliente else None) or "Un cliente"
+        recordatorios.crear_aviso(
+            db, negocio.id_negocio, "cliente_cancelo",
+            f"❌ {quien} canceló por WhatsApp su hora de {servicio.nombre_servicio} "
+            f"({_fecha_legible(cita.fecha_cita)} {cita.hora_cita:%H:%M}). El horario quedó libre.",
+            cita.id_agenda,
+        )
+
+    quedan = agenda_service.citas_activas_cliente(db, negocio.id_negocio, id_cliente)
+    nota_quedan = ""
+    if quedan:
+        nota_quedan = "\nSigues teniendo: " + "; ".join(describir_cita(c, s) for c, s in quedan) + "."
+    if len(canceladas) == 1:
+        cita, servicio = canceladas[0]
+        return (
+            f"Listo, cancelé tu cita de {describir_cita(cita, servicio).replace(' el ', ' del ', 1)}. "
+            f"El horario quedó libre.{nota_quedan}\nCuando quieras volver a agendar, escríbeme."
+        )
+    lista = "\n".join(f"• {describir_cita(c, s)}" for c, s in canceladas)
+    return f"Listo, cancelé tus {len(canceladas)} horas:\n{lista}\nCuando quieras volver a agendar, escríbeme."
 
 
 def _mensaje_bloqueo(db, negocio, servicio, solicitud, ahora, err, excluir_id_agenda=None) -> str:

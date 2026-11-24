@@ -322,6 +322,33 @@ def notificar_confirmacion_del_local(db, negocio, cita, cliente, servicio) -> No
     )
 
 
+def notificar_cancelacion_del_local(db, negocio, cita, cliente, servicio, motivo: str | None = None) -> None:
+    """El local canceló la cita desde la Agenda: se le avisa al cliente por
+    WhatsApp (si hay ventana de 24 h o plantilla) y por correo."""
+    nombre, telefono, correo = _datos(cita, cliente)
+    cuando = f"{_fecha_legible(cita.fecha_cita)} a las {cita.hora_cita:%H:%M}"
+    detalle = f"\nMotivo: {motivo.strip()}" if motivo and motivo.strip() else ""
+    texto = (
+        f"❌ Hola{' *' + nombre + '*' if nombre else ''}, *{negocio.nombre_negocio}* tuvo que cancelar tu hora:\n"
+        f"• Servicio: *{servicio.nombre_servicio}*\n• Cuándo: *{cuando}*{detalle}\n"
+        f"Disculpa las molestias 🙏 Si quieres otra hora, respóndenos por aquí con el día y la hora."
+    )
+    enviar_whatsapp(
+        db, negocio, telefono, texto,
+        config.WHATSAPP_PLANTILLA_RECORDATORIO,
+        [nombre or "cliente", servicio.nombre_servicio, negocio.nombre_negocio, f"{cuando} (CANCELADA)"],
+    )
+    email_service.enviar_correo(
+        correo,
+        f"Hora cancelada: {servicio.nombre_servicio} el {cuando}",
+        f"Hola {nombre or ''},\n\n{negocio.nombre_negocio} tuvo que cancelar tu hora de "
+        f"{servicio.nombre_servicio} del {cuando}.{detalle}\n\n"
+        f"Disculpa las molestias. Si quieres agendar otra hora, escríbenos por WhatsApp.\n\n"
+        f"{negocio.nombre_negocio}",
+        negocio.nombre_negocio,
+    )
+
+
 # --------------------------------------------------------------- motor
 
 def procesar_cita(db: Session, negocio: Negocio, id_agenda: int, ahora_local: datetime | None = None) -> list[str]:

@@ -245,11 +245,15 @@ def _reagendar_o_cancelar_sin_ia(db, negocio, cliente, contexto, catalogo, histo
     """Sin IA: "cambia mi degradado al sábado a las 15", "muévela a las 17",
     "cancela la barba". Si tiene varias citas y no dice cuál, se le pregunta
     (y en el mensaje siguiente puede responder con el servicio o el número).
-    None si el mensaje no es un cambio ni una cancelación."""
-    if not (contexto and contexto.agendar_automatico):
-        return None
+    None si el mensaje no es un cambio ni una cancelación.
+    Cancelar funciona siempre; mover una hora requiere el agendado automático."""
     activas = agenda_service.citas_activas_cliente(db, negocio.id_negocio, cliente.id_cliente)
     if not activas:
+        if reserva_sin_ia.RE_CANCELAR.search(reserva_sin_ia.normalizar_texto(texto_mensaje)):
+            return (
+                "No tienes ninguna cita activa para cancelar. Si quieres agendar una hora nueva, "
+                "dime qué servicio, día y hora prefieres."
+            )
         return None
     hoy = ai_service.ahora_chile().date()
     t = reserva_sin_ia.normalizar_texto(texto_mensaje)
@@ -293,9 +297,12 @@ def _reagendar_o_cancelar_sin_ia(db, negocio, cliente, contexto, catalogo, histo
     ahora = ai_service.ahora_chile()
     if quiere_cancelar and not quiere_cambiar:
         solicitud = agendado_ia.SolicitudCita(
-            accion="CANCELAR", servicio=servicio.nombre_servicio if servicio else None, id_cita=id_cita
+            accion="CANCELAR", servicio=servicio.nombre_servicio if servicio else None, id_cita=id_cita,
+            todas=bool(reserva_sin_ia.RE_TODAS.search(t_actual)) and len(activas) > 1,
         )
         return agendado_ia.procesar_solicitud(db, negocio, cliente.id_cliente, solicitud, ahora)
+    if not (contexto and contexto.agendar_automatico):
+        return None
 
     fecha = reserva_sin_ia.extraer_fecha(texto_mensaje, hoy)
     hora = reserva_sin_ia.extraer_hora(texto_mensaje)
@@ -611,8 +618,8 @@ def procesar_mensaje_detalle(
     # backend crea la cita pendiente con las mismas reglas del Dashboard y
     # arma el mensaje según el resultado real.
     texto_ia, solicitud = agendado_ia.extraer_solicitud(respuesta)
-    if solicitud is not None and solicitud.accion == "CONTACTO":
-        # Cambiar teléfono/correo/nombre de la cita activa no depende del
+    if solicitud is not None and solicitud.accion in ("CONTACTO", "CANCELAR"):
+        # Cambiar teléfono/correo/nombre o cancelar una cita no depende del
         # interruptor de agendado automático.
         respuesta = agendado_ia.procesar_solicitud(
             db, negocio, cliente.id_cliente, solicitud, ai_service.ahora_chile()

@@ -241,6 +241,15 @@ def actualizar_estado_cita(
 
     if datos.estado_cita == "confirmada" and estado_anterior != "confirmada":
         recordatorios.notificar_confirmacion_del_local(db, negocio, cita, cliente, servicio)
+    # Cancelar una hora que seguía vigente: el cliente se entera (y el
+    # horario ya quedó libre para otras reservas).
+    if (
+        datos.estado_cita == "cancelada"
+        and estado_anterior in ("pendiente", "confirmada")
+        and datos.avisar_cliente
+        and agenda_service.inicio_cita(cita) > agenda_service.ahora_chile_naive()
+    ):
+        recordatorios.notificar_cancelacion_del_local(db, negocio, cita, cliente, servicio, datos.motivo)
 
     return _a_response(cita, cliente, servicio)
 

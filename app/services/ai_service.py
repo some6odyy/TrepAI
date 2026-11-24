@@ -88,8 +88,8 @@ def armar_prompt(
             "confirmará la disponibilidad.\n"
         )
         if cita_activa:
-            from app.services.agendado_ia import instruccion_contacto
-            instruccion_agenda += instruccion_contacto()
+            from app.services.agendado_ia import instruccion_cancelar, instruccion_contacto
+            instruccion_agenda += instruccion_contacto() + instruccion_cancelar()
 
     dc = datos_cliente or {}
     datos_cliente_texto = (

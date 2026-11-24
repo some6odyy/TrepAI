@@ -62,6 +62,7 @@ _RE_ESTE_NUMERO = re.compile(r"\b(?:este|al|mi|el) (?:mismo )?(?:numero|whatsapp
 RE_CAMBIO_HORA = re.compile(
     r"\b(cambi\w*|mov\w*|muev\w*|reagend\w*|reprogram\w*|corr(?:e|er|ela|erla|amos)|pas(?:a|ar|ala|arla|emos))\b"
 )
+RE_TODAS = re.compile(r"\b(todas|todos|las dos|ambas|las \d horas)\b")
 RE_CANCELAR = re.compile(r"\b(cancel\w*|anul\w*|ya no (?:voy|podre|puedo))\b")
 # "2", "la 2", "opción 1" como respuesta a la lista de citas (mensaje completo)
 RE_NUMERO_LISTA = re.compile(r"^\s*(?:la|el|opcion|numero|#)?\s*([1-9])\s*$")

@@ -29,6 +29,10 @@ class CitaUpdate(BaseModel):
 
 class CitaEstadoUpdate(BaseModel):
     estado_cita: EstadoCita
+    # Solo al cancelar desde la Agenda: motivo opcional y si se le avisa al
+    # cliente por WhatsApp y correo (por defecto sí).
+    motivo: str | None = Field(default=None, max_length=300)
+    avisar_cliente: bool = True
 
 
 class CitaResponse(BaseModel):

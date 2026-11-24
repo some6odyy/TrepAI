@@ -1107,6 +1107,26 @@
     </div>
   </div>
 
+  <!-- Cancelar una hora desde la Agenda (avisa al cliente) -->
+  <div class="modal-backdrop vista-v2" id="modalCancelarCita">
+    <div class="modal modal-cancelar" role="dialog" aria-modal="true" aria-labelledby="cancelarTitulo">
+      <div class="modal-icon"><svg class="i">
+          <use href="#i-x" />
+        </svg></div>
+      <h3 id="cancelarTitulo">¿Cancelar esta hora?</h3>
+      <p class="text-muted" id="cancelarTexto">—</p>
+      <div class="field">
+        <label for="cancelarMotivo">Motivo (opcional, se le envía al cliente)</label>
+        <textarea id="cancelarMotivo" rows="2" maxlength="300" placeholder="Ej: el barbero está enfermo"></textarea>
+      </div>
+      <label class="check-row"><input type="checkbox" id="cancelarAvisar" checked> Avisar al cliente por WhatsApp y correo</label>
+      <div class="row-actions">
+        <button class="btn btn-ghost" id="cancelarNo">Volver</button>
+        <button class="btn btn-danger" id="cancelarSi">Cancelar hora</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Casos de uso: prompt dinámico / vista móvil -->
   <div class="modal-backdrop vista-v2" id="modalCasos">
     <div class="modal casos-modal" role="dialog" aria-modal="true" aria-labelledby="modalCasosTitulo">
