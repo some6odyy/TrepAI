@@ -24,10 +24,10 @@ def test_dashboard_trae_menu_para_celular():
     # Botón ☰ que abre el menú lateral en pantallas angostas
     assert 'id="btnMenu"' in html and 'aria-controls="sidebar"' in html
     assert 'id="sidebar"' in html and 'id="menuBackdrop"' in html
-    # Las 6 secciones son botones (se pueden usar con el teclado)
-    for vista in ("resumen", "contexto", "agenda", "historial", "clientes", "cuenta"):
+    # Las 7 secciones son botones (se pueden usar con el teclado)
+    for vista in ("resumen", "contexto", "agenda", "historial", "clientes", "casos", "cuenta"):
         assert f'class="nav-item' in html and f'data-view="{vista}"' in html
-    assert html.count('<button type="button" class="nav-item') == 6
+    assert html.count('<button type="button" class="nav-item') == 7
     # Las fuentes ya no se cargan con @import (bloqueaba el primer pintado)
     css = c.get("/dashboard/css/styles.css").text
     assert "@import url(" not in css

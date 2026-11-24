@@ -155,7 +155,7 @@ function mostrarPantallaDashboard() {
 
 const TITULOS_VISTA = {
   resumen: 'Resumen', contexto: 'Contexto IA', agenda: 'Agenda',
-  historial: 'Historial', clientes: 'Clientes', cuenta: 'Mi cuenta',
+  historial: 'Historial', clientes: 'Clientes', casos: 'Casos de uso', cuenta: 'Mi cuenta',
 };
 
 function cambiarVista(nombreVista) {
@@ -180,6 +180,7 @@ function cambiarVista(nombreVista) {
   if (nombreVista === 'historial') cargarConversaciones();
   if (nombreVista === 'clientes') cargarClientes();
   if (nombreVista === 'cuenta') rellenarCuenta();
+  if (nombreVista === 'casos' && typeof cargarCasosDeUso === 'function') cargarCasosDeUso();
 }
 
 function capitalizar(s) { return s.charAt(0).toUpperCase() + s.slice(1); }

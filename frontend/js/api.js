@@ -110,6 +110,17 @@ const api = {
   pausarBotConversacion: (id, idConversacion, pausado, horas = null) =>
     apiFetch(`/negocio/${id}/conversaciones/${idConversacion}/bot`, { method: 'PUT', body: { pausado, horas } }),
 
+  // Pestaña "Casos de uso"
+  demoEstado: (id) => apiFetch(`/negocio/${id}/demo/estado`),
+  demoMensaje: (id, telefono, texto) =>
+    apiFetch(`/negocio/${id}/demo/mensaje`, { method: 'POST', body: { telefono, texto } }),
+  demoPrompt: (id, telefono, texto) =>
+    apiFetch(`/negocio/${id}/demo/prompt`, { method: 'POST', body: { telefono, texto } }),
+  demoCitas: (id, telefono) => apiFetch(`/negocio/${id}/demo/citas?telefono=${telefono}`),
+  demoConversacion: (id, telefono) => apiFetch(`/negocio/${id}/demo/conversacion?telefono=${telefono}`),
+  demoReiniciar: (id, telefono) => apiFetch(`/negocio/${id}/demo/reiniciar`, { method: 'POST', body: { telefono } }),
+  estadoServicio: () => apiFetch('/status'),
+
   probarIa: (id) => apiFetch(`/negocio/${id}/contexto/probar-ia`, { method: 'POST' }),
   novedades: (id) => apiFetch(`/negocio/${id}/novedades`),
   leerAvisos: (id, ids = null) => apiFetch(`/negocio/${id}/avisos/leer`, { method: 'POST', body: { ids } }),

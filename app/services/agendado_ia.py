@@ -35,7 +35,9 @@ from app.models.servicio import Servicio
 from app.services import agenda_service
 from app.services.agenda_service import (
     AnticipacionInsuficienteError,
+    ChoqueConCitaPropiaError,
     CitaActivaExistenteError,
+    CitaAmbiguaError,
     DatosContactoError,
     HorarioBloqueadoError,
     HorarioOcupadoError,
@@ -49,10 +51,13 @@ _RE_CITA = re.compile(
     re.IGNORECASE,
 )
 _RE_REAGENDAR_SIN_SERVICIO = re.compile(
-    r"\[\[\s*REAGENDAR\s*\|\s*(?P<fecha>\d{4}-\d{2}-\d{2})\s*\|\s*(?P<hora>\d{1,2}:\d{2})\s*\]\]",
+    r"\[\[\s*REAGENDAR\s*\|\s*(?P<fecha>\d{4}-\d{2}-\d{2})\s*\|\s*(?P<hora>\d{1,2}:\d{2})\s*"
+    r"(?:\|\s*#?(?P<id>\d+)\s*)?\]\]",
     re.IGNORECASE,
 )
-_RE_CANCELAR = re.compile(r"\[\[\s*CANCELAR\s*\]\]", re.IGNORECASE)
+# [[CANCELAR]] o [[CANCELAR|<id de la cita>]] (cuando el cliente tiene varias)
+_RE_CANCELAR = re.compile(r"\[\[\s*CANCELAR\s*(?:\|\s*#?(?P<id>\d+)\s*)?\]\]", re.IGNORECASE)
+_RE_ID = re.compile(r"^#?\s*(\d+)$")
 # Cambiar los datos de contacto de la cita activa: [[CONTACTO|nombre|correo|teléfono]]
 # ("-" o vacío = ese dato no cambia)
 _RE_CONTACTO = re.compile(
@@ -74,6 +79,10 @@ class SolicitudCita:
     nombre: str | None = None
     correo: str | None = None
     telefono: str | None = None
+    # Cita a cambiar/cancelar cuando el cliente tiene varias (id_agenda)
+    id_cita: int | None = None
+    # True si nombre/correo/teléfono se tomaron de otra cita activa del cliente
+    contacto_reutilizado: bool = False
 
 
 def instruccion_contacto() -> str:
@@ -98,21 +107,26 @@ def instrucciones_para_prompt() -> str:
         "Si el día de la semana y el número del día no coinciden, pregunta cuál es el correcto.\n"
         f"- Solo se agenda con al menos {agenda_service.ANTICIPACION_MINIMA_HORAS} horas de anticipación; "
         "no ofrezcas horas más cercanas que eso.\n"
+        "- UN CLIENTE PUEDE TENER VARIAS CITAS ACTIVAS a la vez (ej. un corte el viernes y la barba el sábado), "
+        "siempre que no se crucen entre sí ni con otras reservas. Revisa 'Citas activas del cliente': "
+        "cada una tiene un número (#id).\n"
         "- Para RESERVAR una hora nueva SIEMPRE necesitas: servicio, fecha, hora, nombre completo, "
         "correo electrónico y número de teléfono donde enviar los recordatorios y la confirmación. "
         "Pide lo que falte (puedes ofrecer usar el mismo número de WhatsApp desde el que escribe, "
-        "pero que el cliente lo confirme). Si en 'Datos guardados del cliente' ya hay nombre o correo, "
-        "pregúntale si quiere usar esos mismos.\n"
-        "- NUEVA RESERVA (solo si el cliente NO tiene una cita activa): cuando tengas TODOS esos datos, "
+        "pero que el cliente lo confirme). Si en 'Datos guardados del cliente' o en sus citas activas ya hay "
+        "nombre, correo o teléfono, pregúntale si quiere usar esos mismos.\n"
+        "- NUEVA RESERVA (también si ya tiene otras citas y pide una hora ADICIONAL): cuando tengas TODOS esos datos, "
         "responde ÚNICAMENTE con esta línea sin ningún otro texto:\n"
         "[[AGENDAR|<nombre exacto del servicio>|<AAAA-MM-DD>|<HH:MM>|<nombre completo>|<correo>|<teléfono con código de país>]]\n"
         "  Ejemplo: [[AGENDAR|Degradado|2026-11-14|16:00|Juan Pérez|juan.perez@gmail.com|56912345678]]\n"
-        "- CAMBIAR O REAGENDAR HORA (si el cliente ya tiene una cita activa y pide moverla): "
+        "- CAMBIAR O REAGENDAR UNA HORA QUE YA TIENE (pide mover una cita existente, no una adicional): "
         "NUNCA uses AGENDAR; responde ÚNICAMENTE con:\n"
-        "[[REAGENDAR|<nombre exacto del servicio>|<AAAA-MM-DD>|<HH:MM>]]\n"
-        "  Ejemplo: [[REAGENDAR|Degradado|2026-11-14|17:30]]\n"
-        "- CANCELAR HORA (si el cliente pide anular su cita activa): responde ÚNICAMENTE con:\n"
-        "[[CANCELAR]]\n"
+        "[[REAGENDAR|<nombre exacto del servicio>|<AAAA-MM-DD nueva>|<HH:MM nueva>|<#id de la cita que se mueve>]]\n"
+        "  Ejemplo: [[REAGENDAR|Degradado|2026-11-14|17:30|#12]]\n"
+        "  Si tiene varias citas y no queda claro cuál quiere mover, pregúntale cuál antes de usar el marcador.\n"
+        "  Si no está claro si quiere MOVER una cita o agendar OTRA adicional, pregúntale.\n"
+        "- CANCELAR HORA: responde ÚNICAMENTE con [[CANCELAR|<#id de la cita>]] (ej. [[CANCELAR|#12]]). "
+        "Si tiene varias y no dice cuál, pregúntale primero.\n"
         f"{instruccion_contacto()}"
         "- El sistema ejecuta la acción en la base de datos y responde al cliente; nunca digas tú "
         "que la hora quedó reservada, cambiada o cancelada ni inventes disponibilidad."
@@ -139,9 +153,10 @@ def extraer_solicitud(texto: str) -> tuple[str, SolicitudCita | None]:
             telefono=_dato_marcador(contacto["telefono"]),
         )
 
-    if _RE_CANCELAR.search(raw):
+    cancelar = _RE_CANCELAR.search(raw)
+    if cancelar:
         limpio = _RE_CANCELAR.sub("", raw).strip()
-        return limpio, SolicitudCita(accion="CANCELAR")
+        return limpio, SolicitudCita(accion="CANCELAR", id_cita=int(cancelar["id"]) if cancelar["id"] else None)
 
     coincidencia = _RE_CITA.search(raw)
     if coincidencia:
@@ -152,12 +167,21 @@ def extraer_solicitud(texto: str) -> tuple[str, SolicitudCita | None]:
             hora = time(int(hh), int(mm))
         except ValueError:
             return limpio, None
+        accion = coincidencia["accion"].upper()
+        nombre = (coincidencia["nombre"] or "").strip() or None
+        if accion == "REAGENDAR":
+            # [[REAGENDAR|servicio|fecha|hora|#id]]: el 5° campo es la cita a mover
+            id_txt = _RE_ID.match(nombre or "")
+            return limpio, SolicitudCita(
+                accion=accion, servicio=coincidencia["servicio"].strip(), fecha=fecha, hora=hora,
+                id_cita=int(id_txt.group(1)) if id_txt else None,
+            )
         return limpio, SolicitudCita(
-            accion=coincidencia["accion"].upper(),
+            accion=accion,
             servicio=coincidencia["servicio"].strip(),
             fecha=fecha,
             hora=hora,
-            nombre=(coincidencia["nombre"] or "").strip() or None,
+            nombre=nombre,
             correo=(coincidencia["correo"] or "").strip() or None,
             telefono=(coincidencia["telefono"] or "").strip() or None,
         )
@@ -171,7 +195,10 @@ def extraer_solicitud(texto: str) -> tuple[str, SolicitudCita | None]:
             hora = time(int(hh), int(mm))
         except ValueError:
             return limpio, None
-        return limpio, SolicitudCita(accion="REAGENDAR", fecha=fecha, hora=hora)
+        return limpio, SolicitudCita(
+            accion="REAGENDAR", fecha=fecha, hora=hora,
+            id_cita=int(coincidencia_sin_serv["id"]) if coincidencia_sin_serv["id"] else None,
+        )
 
     return raw, None
 
@@ -232,6 +259,45 @@ def _sugerir_horarios(
     return sugerencias
 
 
+def describir_cita(cita: Agenda, servicio: Servicio) -> str:
+    return f"*{servicio.nombre_servicio}* el {_fecha_legible(cita.fecha_cita)} a las {cita.hora_cita:%H:%M}"
+
+
+def _mensaje_cual_cita(citas: list, accion: str) -> str:
+    """El cliente tiene varias citas y no se sabe cuál cambiar/cancelar."""
+    lineas = "\n".join(f"{i}. {describir_cita(c, s)}" for i, (c, s) in enumerate(citas, 1))
+    ejemplo = (
+        f"cancela el {citas[0][1].nombre_servicio}" if accion == "cancelar"
+        else f"cambia el {citas[0][1].nombre_servicio} al sábado a las 15"
+    )
+    return (
+        f"Tienes {len(citas)} horas reservadas:\n{lineas}\n"
+        f"¿Cuál quieres {accion}? Dime el servicio o el número (ej. \"{ejemplo}\")."
+    )
+
+
+def _mensaje_choque_propio(err: ChoqueConCitaPropiaError, solicitud) -> str:
+    return (
+        f"Esa hora choca con tu otra cita de {describir_cita(err.cita, err.servicio)} 🙈 "
+        f"Tus horas no se pueden cruzar entre sí. ¿Te acomoda otra hora?"
+    )
+
+
+def _completar_contacto_desde_citas(db: Session, negocio: Negocio, id_cliente: int, solicitud: SolicitudCita) -> None:
+    """Si pide una hora ADICIONAL y no repitió nombre/correo/teléfono, se usan
+    los de su cita activa más próxima (ya los dio al reservar antes)."""
+    if solicitud.nombre and solicitud.correo and solicitud.telefono:
+        return
+    activas = agenda_service.citas_activas_cliente(db, negocio.id_negocio, id_cliente)
+    if not activas:
+        return
+    previa = activas[0][0]
+    solicitud.contacto_reutilizado = True
+    solicitud.nombre = solicitud.nombre or previa.nombre_contacto
+    solicitud.correo = solicitud.correo or previa.correo_contacto
+    solicitud.telefono = solicitud.telefono or previa.telefono_contacto
+
+
 def procesar_solicitud(
     db: Session,
     negocio: Negocio,
@@ -244,10 +310,16 @@ def procesar_solicitud(
         return actualizar_contacto(db, negocio, id_cliente, solicitud.nombre, solicitud.correo, solicitud.telefono)
 
     if solicitud.accion == "CANCELAR":
+        servicios_neg = db.query(Servicio).filter(Servicio.id_negocio == negocio.id_negocio).all()
+        servicio_nombrado = buscar_servicio(solicitud.servicio, servicios_neg) if solicitud.servicio else None
         try:
-            cita_cancelada = agenda_service.cancelar_cita_activa(db, negocio.id_negocio, id_cliente)
+            cita_cancelada = agenda_service.cancelar_cita_activa(
+                db, negocio.id_negocio, id_cliente, id_agenda=solicitud.id_cita, servicio=servicio_nombrado
+            )
         except SinCitaActivaError:
             return "No tienes ninguna cita activa para cancelar. Si quieres agendar una hora nueva, dime qué servicio, día y hora prefieres."
+        except CitaAmbiguaError as err:
+            return _mensaje_cual_cita(err.citas, "cancelar")
 
         servicio = db.query(Servicio).filter(Servicio.id_servicio == cita_cancelada.id_servicio).first()
         nombre_serv = servicio.nombre_servicio if servicio else "tu servicio"
@@ -268,16 +340,18 @@ def procesar_solicitud(
         return _mensaje_anticipacion(db, negocio, servicios, solicitud, ahora, minimo)
 
     if solicitud.accion == "REAGENDAR":
-        existente = agenda_service.obtener_cita_activa_cliente(db, negocio.id_negocio, id_cliente)
-        if existente is None:
+        servicio_pedido = buscar_servicio(solicitud.servicio, servicios) if solicitud.servicio else None
+        try:
+            cita_actual, servicio_actual = agenda_service.elegir_cita_cliente(
+                db, negocio.id_negocio, id_cliente, id_agenda=solicitud.id_cita, servicio=servicio_pedido
+            )
+        except SinCitaActivaError:
             return "No encontré una cita activa para cambiar. Dime qué servicio, día y hora quieres reservar."
+        except CitaAmbiguaError as err:
+            return _mensaje_cual_cita(err.citas, "cambiar")
 
-        cita_actual, servicio_actual = existente
-        servicio_nuevo = (
-            buscar_servicio(solicitud.servicio, servicios)
-            if solicitud.servicio
-            else servicio_actual
-        ) or servicio_actual
+        servicio_nuevo = servicio_pedido or servicio_actual
+        antes = describir_cita(cita_actual, servicio_actual)
 
         try:
             agenda_service.reagendar_cita_validada(
@@ -289,12 +363,15 @@ def procesar_solicitud(
                 nuevo_servicio=servicio_nuevo,
                 horario_negocio=negocio.horario,
                 ahora_local=ahora,
+                id_agenda=cita_actual.id_agenda,
             )
         except AnticipacionInsuficienteError as err:
             return _mensaje_anticipacion(db, negocio, servicios, solicitud, ahora, err.minimo)
         except FueraDeHorarioError:
             horario = f" Nuestro horario es: {negocio.horario}." if negocio.horario else ""
             return f"Esa hora queda fuera de nuestro horario de atención.{horario} ¿A qué otra hora la cambiamos?"
+        except ChoqueConCitaPropiaError as err:
+            return _mensaje_choque_propio(err, solicitud)
         except HorarioBloqueadoError as err:
             return _mensaje_bloqueo(db, negocio, servicio_nuevo, solicitud, ahora, err, cita_actual.id_agenda)
         except HorarioOcupadoError:
@@ -315,10 +392,16 @@ def procesar_solicitud(
                 )
             return f"El {_fecha_legible(solicitud.fecha)} ya no me quedan horas libres después de las {solicitud.hora:%H:%M}. ¿Te acomoda otro día?"
 
+        otras = len(agenda_service.citas_activas_cliente(db, negocio.id_negocio, id_cliente)) - 1
+        nota_otras = (
+            "\nTu otra hora reservada sigue igual." if otras == 1
+            else f"\nTus otras {otras} horas reservadas siguen igual." if otras > 1 else ""
+        )
         return (
-            f"¡Listo! 🙌 Cambié tu hora de *{servicio_nuevo.nombre_servicio}* para el {cuando}.\n"
-            f"La cita anterior quedó liberada y esta nueva hora queda *pendiente* hasta que el equipo la confirme. "
-            f"Te llegarán los recordatorios con la nueva hora."
+            f"¡Listo! 🙌 Cambié tu hora de {antes} para el {cuando}"
+            f"{'' if servicio_nuevo.id_servicio == servicio_actual.id_servicio else f' (ahora *{servicio_nuevo.nombre_servicio}*)'}.\n"
+            f"La hora anterior quedó liberada y esta nueva queda *pendiente* hasta que el equipo la confirme. "
+            f"Te llegarán los recordatorios con la nueva hora.{nota_otras}"
         )
 
     # Acción: AGENDAR (nueva cita)
@@ -327,6 +410,7 @@ def procesar_solicitud(
         nombres = ", ".join(s.nombre_servicio for s in servicios) or "ninguno cargado"
         return f"No encontré el servicio \"{solicitud.servicio}\". ¿Cuál de estos quieres? {nombres}"
 
+    _completar_contacto_desde_citas(db, negocio, id_cliente, solicitud)
     try:
         agenda_service.crear_cita_validada(
             db,
@@ -347,22 +431,13 @@ def procesar_solicitud(
     except AnticipacionInsuficienteError as err:
         return _mensaje_anticipacion(db, negocio, servicios, solicitud, ahora, err.minimo)
     except CitaActivaExistenteError as err:
-        actual_txt = f"*{_fecha_legible(err.cita.fecha_cita)}* a las *{err.cita.hora_cita:%H:%M}*"
-        mismo_horario = (
-            err.cita.fecha_cita == solicitud.fecha
-            and err.cita.hora_cita.replace(second=0, microsecond=0) == solicitud.hora.replace(second=0, microsecond=0)
-            and err.servicio.id_servicio == servicio.id_servicio
-        )
-        if mismo_horario:
-            # Pidió exactamente la cita que ya tiene: no hay nada que mover.
-            return (
-                f"Ya tienes reservado *{err.servicio.nombre_servicio}* el {actual_txt} "
-                f"({err.cita.estado_cita}). No hace falta agendar de nuevo 🙌"
-            )
+        # Pidió exactamente una cita que ya tiene: no se duplica.
         return (
-            f"Ya tienes una cita activa de *{err.servicio.nombre_servicio}* el {actual_txt} ({err.cita.estado_cita}). "
-            f"Si quieres cambiarla para el {cuando}, confírmamelo y la muevo sin duplicarla."
+            f"Ya tienes reservado {describir_cita(err.cita, err.servicio)} ({err.cita.estado_cita}). "
+            f"No hace falta agendar de nuevo 🙌"
         )
+    except ChoqueConCitaPropiaError as err:
+        return _mensaje_choque_propio(err, solicitud)
     except FueraDeHorarioError:
         horario = f" Nuestro horario es: {negocio.horario}." if negocio.horario else ""
         return f"Esa hora queda fuera de nuestro horario de atención.{horario} ¿Te acomoda otro día u hora?"
@@ -389,10 +464,17 @@ def procesar_solicitud(
             cliente.correo = correo_ok
         db.commit()
 
+    total = len(agenda_service.citas_activas_cliente(db, negocio.id_negocio, id_cliente))
+    nota_total = f"\nCon esta tienes {total} horas reservadas con nosotros." if total > 1 else ""
+    if solicitud.contacto_reutilizado:
+        nota_total += (
+            f"\nUsé los mismos datos de tu otra hora ({solicitud.nombre}, {solicitud.correo}); "
+            f"si quieres otros para esta, dímelo."
+        )
     return (
         f"¡Listo! 🙌 Reservé *{servicio.nombre_servicio}* para el {cuando}.\n"
         f"Tu hora queda *pendiente* hasta que el equipo la confirme. "
-        f"Te enviaremos un recordatorio el día antes y te pediremos confirmar 1 hora antes."
+        f"Te enviaremos un recordatorio el día antes y te pediremos confirmar 1 hora antes.{nota_total}"
     )
 
 

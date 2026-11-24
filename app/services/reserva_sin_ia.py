@@ -58,6 +58,21 @@ _RE_INTENCION_CAMBIO = re.compile(
 _RE_ESTE_NUMERO = re.compile(r"\b(?:este|al|mi|el) (?:mismo )?(?:numero|whatsapp|wsp|celular)(?: (?:de )?(?:aca|aqui|desde el que (?:te )?escribo))?\b|\beste mismo\b")
 
 
+# Intención de mover una hora que ya tiene / de cancelarla (texto normalizado)
+RE_CAMBIO_HORA = re.compile(
+    r"\b(cambi\w*|mov\w*|muev\w*|reagend\w*|reprogram\w*|corr(?:e|er|ela|erla|amos)|pas(?:a|ar|ala|arla|emos))\b"
+)
+RE_CANCELAR = re.compile(r"\b(cancel\w*|anul\w*|ya no (?:voy|podre|puedo))\b")
+# "2", "la 2", "opción 1" como respuesta a la lista de citas (mensaje completo)
+RE_NUMERO_LISTA = re.compile(r"^\s*(?:la|el|opcion|numero|#)?\s*([1-9])\s*$")
+# Palabras de un cambio de datos de contacto (no de hora)
+RE_DATO_CONTACTO = re.compile(r"\b(correo|mail|email|telefono|numero|celular|fono|nombre)\b")
+
+
+def normalizar_texto(texto: str) -> str:
+    return _normalizar(texto).replace("ñ", "n")
+
+
 def _normalizar(texto: str) -> str:
     # Se conserva la ñ (para nombres) pero se quitan tildes
     t = (texto or "").lower().replace("ñ", "\0")

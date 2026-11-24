@@ -236,6 +236,42 @@ Los logs de Vercel muestran el motivo de cada falla (ej. `respondió 429: ...`).
   tardó, y el Resumen muestra el promedio y el % bajo 15 s de los últimos 7
   días (`GET /negocio/{id}/tiempo-respuesta`).
 
+## Varias citas por cliente (WhatsApp)
+
+- Un cliente puede tener **más de una cita activa** (ej. degradado el viernes
+  y barba el sábado). Ninguna puede cruzarse con otra reserva del negocio
+  **ni con otra cita del mismo cliente**.
+- Para una hora adicional, si no repite nombre, correo y teléfono, se usan
+  los de su otra cita (el bot lo avisa).
+- **Cambiar** mueve solo la cita indicada; las demás quedan igual. La IA ve
+  las citas con su `#id` y usa `[[REAGENDAR|servicio|AAAA-MM-DD|HH:MM|#id]]`;
+  sin IA basta con nombrar el servicio ("cambia el degradado al sábado a las
+  15"). Si no queda claro cuál, el bot muestra la lista y pregunta (se puede
+  responder con el número).
+- **Cancelar** igual: `[[CANCELAR|#id]]` o "cancela la barba".
+- Las citas que ya pasaron dejan de contar como activas.
+- Lógica en `services/agenda_service.py` (`citas_activas_cliente`,
+  `elegir_cita_cliente`, `validar_sin_choque_propio`) y
+  `services/agendado_ia.py`; pruebas en `tests/test_varias_citas.py`.
+
+## Pestaña "Casos de uso" (demostración)
+
+En el Dashboard, **Casos de uso** muestra cada requerimiento (RF-01..09,
+agenda por WhatsApp y RNF-01..04) con evidencia calculada de la base de
+datos y un botón para probarlo en vivo:
+
+- **Simulador de WhatsApp** con dos clientes de prueba (+56 9 0000 0001/2):
+  el mensaje pasa por el mismo flujo que el webhook (bot on/off, pausa,
+  prompt, IA o modo sin IA, agenda) y la respuesta se muestra ahí mismo,
+  con su origen y latencia. Trae un guion de 10 pasos (agendar, otra cita,
+  choques, cambiar, cancelar, < 2 h). "Reiniciar" cancela solo las citas de
+  los clientes de prueba.
+- **Ver prompt** (RF-07), **Probar IA** (RF-08), **Intentar acceder** a otro
+  negocio (RNF-02, debe dar 403), **Vista de celular** (RNF-03) y
+  **Comprobar /status** (RNF-04).
+- Endpoints: `routers/demo.py` (`/negocio/{id}/demo/...`); frontend en
+  `frontend/js/casos.js` y `frontend/css/casos.css`.
+
 ## Mapeo requerimiento -> archivo
 
 | RF/RNF | Dónde vive |

@@ -70,7 +70,8 @@ class HorarioBloqueadoError(HorarioOcupadoError):
 
 
 class CitaActivaExistenteError(Exception):
-    """El cliente ya tiene una cita pendiente o confirmada en el negocio."""
+    """El cliente ya tiene reservada exactamente esa cita (mismo servicio,
+    día y hora). Un cliente SÍ puede tener varias citas activas a la vez."""
 
     def __init__(self, cita: Agenda, servicio: Servicio):
         self.cita = cita
@@ -83,6 +84,31 @@ class CitaActivaExistenteError(Exception):
 
 class SinCitaActivaError(Exception):
     """El cliente intentó reagendar o cancelar sin tener una cita activa."""
+
+
+class CitaAmbiguaError(Exception):
+    """El cliente tiene varias citas activas y no se sabe cuál quiere cambiar
+    o cancelar. `citas` trae la lista [(Agenda, Servicio), ...]."""
+
+    def __init__(self, citas: list):
+        self.citas = citas
+        super().__init__("Tienes varias citas activas: indica cuál.")
+
+
+class ChoqueConCitaPropiaError(HorarioOcupadoError):
+    """El horario pedido se solapa con OTRA cita activa del mismo cliente
+    (puede tener varias, pero no a la misma hora)."""
+
+    def __init__(self, cita: Agenda, servicio: Servicio, inicio: time, fin: time):
+        self.cita = cita
+        self.servicio = servicio
+        self.conflicto_inicio = inicio
+        self.conflicto_fin = fin
+        Exception.__init__(
+            self,
+            f"Ese horario choca con tu otra cita de {servicio.nombre_servicio} "
+            f"({cita.fecha_cita:%d-%m} de {inicio:%H:%M} a {fin:%H:%M}).",
+        )
 
 
 class AnticipacionInsuficienteError(Exception):
@@ -199,22 +225,89 @@ def liberar_pendientes_vencidas(db: Session, id_negocio: int) -> int:
     return len(vencidas)
 
 
-def obtener_cita_activa_cliente(
-    db: Session, id_negocio: int, id_cliente: int
-) -> tuple[Agenda, Servicio] | None:
-    """Devuelve la cita 'pendiente' o 'confirmada' más próxima del cliente."""
+def citas_activas_cliente(
+    db: Session, id_negocio: int, id_cliente: int, ahora_local: datetime | None = None
+) -> list[tuple[Agenda, Servicio]]:
+    """Todas las citas 'pendiente' o 'confirmada' del cliente que todavía no
+    terminan, de la más próxima a la más lejana. Un cliente puede tener
+    varias (ej. corte el viernes y barba el sábado)."""
     liberar_pendientes_vencidas(db, id_negocio)
-    return (
+    if ahora_local is None:
+        from app.services import ai_service  # reloj del bot (las pruebas lo fijan)
+        ahora_local = ai_service.ahora_chile()
+    ahora = ahora_local.replace(tzinfo=None)
+    filas = (
         db.query(Agenda, Servicio)
         .join(Servicio, Agenda.id_servicio == Servicio.id_servicio)
         .filter(
             Servicio.id_negocio == id_negocio,
             Agenda.id_cliente == id_cliente,
             Agenda.estado_cita.in_(("pendiente", "confirmada")),
+            Agenda.fecha_cita >= ahora.date(),
         )
-        .order_by(Agenda.fecha_cita.asc(), Agenda.hora_cita.asc())
-        .first()
+        .order_by(Agenda.fecha_cita.asc(), Agenda.hora_cita.asc(), Agenda.id_agenda.asc())
+        .all()
     )
+    # Las de hoy que ya terminaron no cuentan como "activas"
+    return [
+        (cita, servicio) for cita, servicio in filas
+        if inicio_cita(cita) + timedelta(minutes=duracion_minutos(servicio)) > ahora
+    ]
+
+
+def obtener_cita_activa_cliente(
+    db: Session, id_negocio: int, id_cliente: int
+) -> tuple[Agenda, Servicio] | None:
+    """Devuelve la cita 'pendiente' o 'confirmada' más próxima del cliente."""
+    activas = citas_activas_cliente(db, id_negocio, id_cliente)
+    return activas[0] if activas else None
+
+
+def elegir_cita_cliente(
+    db: Session,
+    id_negocio: int,
+    id_cliente: int,
+    id_agenda: int | None = None,
+    servicio: Servicio | None = None,
+) -> tuple[Agenda, Servicio]:
+    """Decide QUÉ cita activa quiere cambiar o cancelar el cliente:
+    1) la indicada por id (si es suya y está activa),
+    2) si tiene una sola, esa,
+    3) si nombró un servicio y solo una de sus citas es de ese servicio, esa.
+    Si no se puede decidir lanza CitaAmbiguaError; si no tiene, SinCitaActivaError."""
+    activas = citas_activas_cliente(db, id_negocio, id_cliente)
+    if not activas:
+        raise SinCitaActivaError("No tienes una cita activa.")
+    if id_agenda is not None:
+        for cita, serv in activas:
+            if cita.id_agenda == id_agenda:
+                return cita, serv
+    if len(activas) == 1:
+        return activas[0]
+    if servicio is not None:
+        del_servicio = [(c, s) for c, s in activas if s.id_servicio == servicio.id_servicio]
+        if len(del_servicio) == 1:
+            return del_servicio[0]
+    raise CitaAmbiguaError(activas)
+
+
+def validar_sin_choque_propio(
+    db: Session,
+    id_negocio: int,
+    id_cliente: int,
+    fecha: date,
+    hora: time,
+    duracion_min: int,
+    excluir_id_agenda: int | None = None,
+) -> None:
+    """El cliente puede tener varias citas, pero no dos que se solapen."""
+    nuevo_ini, nuevo_fin = _intervalo(fecha, hora, duracion_min)
+    for cita, servicio in citas_activas_cliente(db, id_negocio, id_cliente):
+        if cita.id_agenda == excluir_id_agenda or cita.fecha_cita != fecha:
+            continue
+        ini, fin = _intervalo(cita.fecha_cita, cita.hora_cita, duracion_minutos(servicio))
+        if nuevo_ini < fin and ini < nuevo_fin:
+            raise ChoqueConCitaPropiaError(cita, servicio, ini.time(), fin.time())
 
 
 def validar_horario_libre(
@@ -272,15 +365,22 @@ def crear_cita_validada(
     telefono_contacto: str | None = None,
     ahora_local: datetime | None = None,
 ) -> Agenda:
-    """Crea una cita 'pendiente'. Desde el flujo IA pasa permitir_duplicado_cliente=False
-    para evitar que se dupliquen reservas cuando el cliente pide un cambio.
+    """Crea una cita 'pendiente'. Un cliente puede tener VARIAS citas activas;
+    desde el flujo IA se pasa permitir_duplicado_cliente=False para no crear
+    dos veces exactamente la misma cita (mismo servicio, día y hora) si el
+    cliente repite el mensaje. Tampoco se permite que se solape con otra
+    cita del mismo cliente (ChoqueConCitaPropiaError).
 
     Exige nombre, correo y teléfono de contacto y al menos
     ANTICIPACION_MINIMA_HORAS de anticipación."""
     if not permitir_duplicado_cliente:
-        existente = obtener_cita_activa_cliente(db, id_negocio, id_cliente)
-        if existente is not None:
-            raise CitaActivaExistenteError(*existente)
+        for cita_existente, serv_existente in citas_activas_cliente(db, id_negocio, id_cliente, ahora_local):
+            if (
+                cita_existente.fecha_cita == fecha
+                and cita_existente.hora_cita.replace(second=0, microsecond=0) == hora.replace(second=0, microsecond=0)
+                and serv_existente.id_servicio == servicio.id_servicio
+            ):
+                raise CitaActivaExistenteError(cita_existente, serv_existente)
 
     nombre_contacto, correo_contacto, telefono_contacto = validar_contacto(
         nombre_contacto, correo_contacto, telefono_contacto
@@ -288,6 +388,7 @@ def crear_cita_validada(
     validar_anticipacion(fecha, hora, ahora_local)
 
     validar_dentro_de_horario(horario_negocio, fecha, hora, duracion_minutos(servicio))
+    validar_sin_choque_propio(db, id_negocio, id_cliente, fecha, hora, duracion_minutos(servicio))
     validar_horario_libre(db, id_negocio, fecha, hora, duracion_minutos(servicio))
 
     cita = Agenda(
@@ -316,43 +417,28 @@ def reagendar_cita_validada(
     nuevo_servicio: Servicio | None = None,
     horario_negocio: str | None = None,
     ahora_local: datetime | None = None,
+    id_agenda: int | None = None,
 ) -> Agenda:
-    """Mueve la cita activa más reciente del cliente a un nuevo día/hora
-    y cancela cualquier duplicado activo previo. Conserva los datos de
+    """Mueve UNA cita activa del cliente a un nuevo día/hora (y opcionalmente
+    a otro servicio). Las demás citas del cliente no se tocan.
+
+    Cuál se mueve lo decide elegir_cita_cliente (por id, porque es la única,
+    o por el servicio nombrado); si hay varias y no se sabe cuál, lanza
+    CitaAmbiguaError. La nueva hora no puede chocar con otras citas del
+    negocio ni con las otras citas del mismo cliente. Conserva los datos de
     contacto; los recordatorios se reprograman para la nueva hora."""
     validar_anticipacion(nueva_fecha, nueva_hora, ahora_local)
-    liberar_pendientes_vencidas(db, id_negocio)
-    activas = (
-        db.query(Agenda, Servicio)
-        .join(Servicio, Agenda.id_servicio == Servicio.id_servicio)
-        .filter(
-            Servicio.id_negocio == id_negocio,
-            Agenda.id_cliente == id_cliente,
-            Agenda.estado_cita.in_(("pendiente", "confirmada")),
-        )
-        .order_by(Agenda.fecha_cita.desc(), Agenda.hora_cita.desc())
-        .all()
+    cita, servicio_actual = elegir_cita_cliente(
+        db, id_negocio, id_cliente, id_agenda=id_agenda, servicio=nuevo_servicio
     )
-    if not activas:
-        raise SinCitaActivaError("No tienes una cita activa para reagendar.")
-
-    cita, servicio_actual = activas[0]
     servicio_final = nuevo_servicio or servicio_actual
     duracion = duracion_minutos(servicio_final)
-    ids_cliente = {c.id_agenda for c, _ in activas}
 
     validar_dentro_de_horario(horario_negocio, nueva_fecha, nueva_hora, duracion)
-    validar_horario_libre(
-        db,
-        id_negocio,
-        nueva_fecha,
-        nueva_hora,
-        duracion,
-        excluir_ids_agenda=ids_cliente,
+    validar_sin_choque_propio(
+        db, id_negocio, id_cliente, nueva_fecha, nueva_hora, duracion, excluir_id_agenda=cita.id_agenda
     )
-
-    for extra, _ in activas[1:]:
-        extra.estado_cita = "cancelada"
+    validar_horario_libre(db, id_negocio, nueva_fecha, nueva_hora, duracion, excluir_id_agenda=cita.id_agenda)
 
     cita.id_servicio = servicio_final.id_servicio
     cita.fecha_cita = nueva_fecha
@@ -384,10 +470,10 @@ def actualizar_contacto_cita_activa(
 
     Lanza SinCitaActivaError si no tiene cita activa y DatosContactoError
     (con `invalidos`) si el correo o el teléfono no son válidos."""
-    existente = obtener_cita_activa_cliente(db, id_negocio, id_cliente)
-    if existente is None:
+    activas = citas_activas_cliente(db, id_negocio, id_cliente)
+    if not activas:
         raise SinCitaActivaError("No tienes una cita activa.")
-    cita, servicio = existente
+    cita, servicio = activas[0]
 
     invalidos, nuevos = [], {}
     if nombre is not None and nombre.strip():
@@ -411,14 +497,20 @@ def actualizar_contacto_cita_activa(
     if invalidos:
         raise DatosContactoError([], invalidos)
 
-    actuales = {"nombre": cita.nombre_contacto, "correo": cita.correo_contacto, "teléfono": cita.telefono_contacto}
-    cambios = {campo: valor for campo, valor in nuevos.items() if valor != actuales[campo]}
-    if "nombre" in cambios:
-        cita.nombre_contacto = cambios["nombre"]
-    if "correo" in cambios:
-        cita.correo_contacto = cambios["correo"]
-    if "teléfono" in cambios:
-        cita.telefono_contacto = cambios["teléfono"]
+    # Con varias citas activas, el cambio aplica a todas (los recordatorios
+    # de cada una llegan al mismo contacto).
+    cambios: dict[str, str] = {}
+    for c, _ in activas:
+        actuales = {"nombre": c.nombre_contacto, "correo": c.correo_contacto, "teléfono": c.telefono_contacto}
+        for campo, valor in nuevos.items():
+            if valor != actuales[campo]:
+                cambios[campo] = valor
+        if "nombre" in nuevos:
+            c.nombre_contacto = nuevos["nombre"]
+        if "correo" in nuevos:
+            c.correo_contacto = nuevos["correo"]
+        if "teléfono" in nuevos:
+            c.telefono_contacto = nuevos["teléfono"]
 
     # La ficha del cliente también se actualiza para las próximas reservas
     # (el teléfono de la ficha es su WhatsApp: ese no se cambia).
@@ -434,14 +526,13 @@ def actualizar_contacto_cita_activa(
 
 
 def cancelar_cita_activa(
-    db: Session, id_negocio: int, id_cliente: int
+    db: Session, id_negocio: int, id_cliente: int, id_agenda: int | None = None,
+    servicio: Servicio | None = None,
 ) -> Agenda:
-    """Cancela la cita activa del cliente y libera el bloque horario."""
-    existente = obtener_cita_activa_cliente(db, id_negocio, id_cliente)
-    if existente is None:
-        raise SinCitaActivaError("No tienes una cita activa para cancelar.")
-
-    cita, _ = existente
+    """Cancela UNA cita activa del cliente (la indicada, la única o la del
+    servicio nombrado) y libera el bloque horario. Lanza CitaAmbiguaError
+    si tiene varias y no se sabe cuál."""
+    cita, _ = elegir_cita_cliente(db, id_negocio, id_cliente, id_agenda=id_agenda, servicio=servicio)
     cita.estado_cita = "cancelada"
     db.commit()
     db.refresh(cita)

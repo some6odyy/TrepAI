@@ -89,9 +89,13 @@ def test_conversacion_real():
 
     # Después de reservar, los datos viejos no se reutilizan: un saludo es un saludo
     assert "Reservé" not in decir("Hola")
-    # Pedir otra hora ya teniendo una activa -> lo dice el flujo normal de agenda
+    # Pedir OTRA hora ya teniendo una activa: se puede tener más de una cita
     r = decir("Barba completa el martes a las 12, Yohel yohel@gmail.com 967158624")
-    assert "Reservé" not in r, r
+    assert "Reservé" in r and "2 horas reservadas" in r, r
+    # Pedir exactamente la misma no la duplica
+    r = decir("Barba completa el martes a las 12, Yohel yohel@gmail.com 967158624")
+    assert "Ya tienes reservado" in r, r
+    assert len(c.get(f"/negocio/{idn}/agenda", headers=h).json()) == 2
 
     # Todo en un solo mensaje, otro cliente; hora ocupada -> sugiere horas libres
     r = decir("Quiero Degradado con diseño mañana a las 18, me llamo Ana Soto, ana@correo.cl, +56 9 1234 5678", tel="56912345678")

@@ -8,6 +8,7 @@ RF-08), sin importar por dónde llegó:
 Así ambos canales usan exactamente el mismo prompt, la misma IA y quedan
 guardados en el mismo historial que muestra el Dashboard.
 """
+import re
 import time as time_mod
 from datetime import datetime, timedelta
 
@@ -217,11 +218,16 @@ def procesar_no_texto(
     return RESPUESTA_NO_TEXTO, mensaje
 
 
-def _cambiar_contacto_sin_ia(db, negocio, cliente, catalogo, texto_mensaje) -> str | None:
+def _cambiar_contacto_sin_ia(db, negocio, cliente, catalogo, texto_mensaje, historial=None) -> str | None:
     """Sin IA: si el cliente ya tiene hora y manda un teléfono, correo o
     nombre nuevo ("mi teléfono es +56 9 ..."), se actualiza la cita para
-    que los recordatorios lleguen ahí. None si el mensaje no es eso."""
+    que los recordatorios lleguen ahí. None si el mensaje no es eso.
+
+    Si está armando OTRA reserva (el bot le acaba de pedir nombre, correo y
+    teléfono), esos datos son para la reserva nueva, no un cambio."""
     if agenda_service.obtener_cita_activa_cliente(db, negocio.id_negocio, cliente.id_cliente) is None:
+        return None
+    if historial and _reserva_en_curso(historial, catalogo, ai_service.ahora_chile().date()) is not None:
         return None
     cambio = reserva_sin_ia.extraer_cambio_contacto(
         texto_mensaje, catalogo, ai_service.ahora_chile().date(), cliente.telefono
@@ -233,6 +239,87 @@ def _cambiar_contacto_sin_ia(db, negocio, cliente, catalogo, texto_mensaje) -> s
     return agendado_ia.actualizar_contacto(
         db, negocio, cliente.id_cliente, nombre=cambio.nombre, correo=cambio.correo, telefono=cambio.telefono
     )
+
+
+def _reagendar_o_cancelar_sin_ia(db, negocio, cliente, contexto, catalogo, historial, texto_mensaje) -> str | None:
+    """Sin IA: "cambia mi degradado al sábado a las 15", "muévela a las 17",
+    "cancela la barba". Si tiene varias citas y no dice cuál, se le pregunta
+    (y en el mensaje siguiente puede responder con el servicio o el número).
+    None si el mensaje no es un cambio ni una cancelación."""
+    if not (contexto and contexto.agendar_automatico):
+        return None
+    activas = agenda_service.citas_activas_cliente(db, negocio.id_negocio, cliente.id_cliente)
+    if not activas:
+        return None
+    hoy = ai_service.ahora_chile().date()
+    t = reserva_sin_ia.normalizar_texto(texto_mensaje)
+    t_actual = t
+    ultimo_bot = next((c for e, c in reversed(historial) if e != "cliente"), "")
+    # Respuesta a "¿Cuál quieres cambiar/cancelar?": se junta con el pedido anterior
+    if "¿Cuál quieres" in ultimo_bot:
+        pedido_previo = next((c for e, c in reversed(historial) if e == "cliente"), "")
+        t = reserva_sin_ia.normalizar_texto(pedido_previo) + " " + t
+        texto_mensaje = pedido_previo + " " + texto_mensaje
+        if "¿Cuál quieres cancelar" in ultimo_bot and "cancel" not in t:
+            t = "cancela " + t
+        if "¿Cuál quieres cambiar" in ultimo_bot and not reserva_sin_ia.RE_CAMBIO_HORA.search(t):
+            t = "cambia " + t
+
+    quiere_cancelar = bool(reserva_sin_ia.RE_CANCELAR.search(t))
+    quiere_cambiar = bool(reserva_sin_ia.RE_CAMBIO_HORA.search(t))
+    if not (quiere_cancelar or quiere_cambiar):
+        return None
+    if quiere_cambiar and not quiere_cancelar and reserva_sin_ia.RE_DATO_CONTACTO.search(t_actual) and not (
+        reserva_sin_ia.extraer_fecha(texto_mensaje, hoy) or reserva_sin_ia.extraer_hora(texto_mensaje)
+    ):
+        return None  # "cambia mi correo": es un cambio de datos, no de hora
+
+    # ¿Cuál cita? por número de la lista ("la 2"), por servicio, o la única
+    servicio = reserva_sin_ia.extraer_servicio(texto_mensaje, catalogo)
+    if servicio is None:
+        # "cancela la barba" -> la única cita cuyo servicio tiene esa palabra
+        palabras = set(re.findall(r"[a-zñ]{4,}", t))
+        candidatos = {
+            s.id_servicio: s for _, s in activas
+            if palabras & set(re.findall(r"[a-zñ]{4,}", reserva_sin_ia.normalizar_texto(s.nombre_servicio)))
+        }
+        if len(candidatos) == 1:
+            servicio = next(iter(candidatos.values()))
+    id_cita = None
+    m_num = reserva_sin_ia.RE_NUMERO_LISTA.search(t_actual)
+    if m_num and len(activas) > 1 and 1 <= int(m_num.group(1)) <= len(activas):
+        id_cita = activas[int(m_num.group(1)) - 1][0].id_agenda
+
+    ahora = ai_service.ahora_chile()
+    if quiere_cancelar and not quiere_cambiar:
+        solicitud = agendado_ia.SolicitudCita(
+            accion="CANCELAR", servicio=servicio.nombre_servicio if servicio else None, id_cita=id_cita
+        )
+        return agendado_ia.procesar_solicitud(db, negocio, cliente.id_cliente, solicitud, ahora)
+
+    fecha = reserva_sin_ia.extraer_fecha(texto_mensaje, hoy)
+    hora = reserva_sin_ia.extraer_hora(texto_mensaje)
+    try:
+        cita, serv = agenda_service.elegir_cita_cliente(
+            db, negocio.id_negocio, cliente.id_cliente, id_agenda=id_cita, servicio=servicio
+        )
+    except agenda_service.CitaAmbiguaError as err:
+        return agendado_ia._mensaje_cual_cita(err.citas, "cambiar")
+    except agenda_service.SinCitaActivaError:
+        return None
+    if not (fecha or hora):
+        return (
+            f"¿Para qué día y hora quieres mover tu hora de {agendado_ia.describir_cita(cita, serv)}? "
+            f"(ej. \"el sábado a las 15\")"
+        )
+    solicitud = agendado_ia.SolicitudCita(
+        accion="REAGENDAR",
+        servicio=serv.nombre_servicio,
+        fecha=fecha or cita.fecha_cita,
+        hora=hora or cita.hora_cita,
+        id_cita=cita.id_agenda,
+    )
+    return agendado_ia.procesar_solicitud(db, negocio, cliente.id_cliente, solicitud, ahora)
 
 
 # Mensajes del bot que dejan una reserva sin IA a medias
@@ -298,6 +385,17 @@ def _agendar_sin_ia(db, negocio, cliente, contexto, catalogo, historial, texto_m
     datos = reserva_sin_ia.reunir_datos(
         reserva_sin_ia.mensajes_desde_ultima_reserva(historial, texto_mensaje), catalogo, hoy
     )
+    reutilizado = False
+    if (datos.fecha or datos.hora) and not (datos.nombre and datos.correo and datos.telefono):
+        # Pide una hora ADICIONAL: si no repitió sus datos, se usan los de su cita activa
+        activa = agenda_service.obtener_cita_activa_cliente(db, negocio.id_negocio, cliente.id_cliente)
+        if activa is not None:
+            previa = activa[0]
+            reutilizado = True
+            datos.nombre = datos.nombre or previa.nombre_contacto
+            datos.correo = datos.correo or previa.correo_contacto
+            datos.telefono = datos.telefono or previa.telefono_contacto
+            datos.calcular_faltantes()
     if not (datos.fecha or datos.hora or (datos.servicio and (datos.correo or datos.telefono or datos.nombre))):
         return None  # solo nombró un servicio: lo responde respuesta_sin_ia (precio y duración)
     if datos.faltan:
@@ -314,6 +412,7 @@ def _agendar_sin_ia(db, negocio, cliente, contexto, catalogo, historial, texto_m
         )
     solicitud = agendado_ia.SolicitudCita(
         accion="AGENDAR",
+        contacto_reutilizado=reutilizado,
         servicio=datos.servicio.nombre_servicio,
         fecha=datos.fecha,
         hora=datos.hora,
@@ -353,6 +452,73 @@ def _avisar_ia_no_disponible(db: Session, negocio: Negocio, cliente) -> None:
     )
     if ya_existe is None:
         recordatorios.crear_aviso(db, negocio.id_negocio, "ia_no_disponible", texto)
+
+
+def armar_prompt_cliente(db: Session, negocio: Negocio, cliente, texto_mensaje: str, historial: list):
+    """RF-07: junta el mensaje del cliente con el contexto del negocio (RF-03),
+    su catálogo, sus citas activas y la conversación. Devuelve
+    (prompt, contexto, catalogo, catalogo_dicts, perfil). La usa el flujo
+    real y la pestaña "Casos de uso" para mostrar el prompt."""
+    contexto = db.query(ContextoIA).filter(ContextoIA.id_negocio == negocio.id_negocio).first()
+    catalogo = db.query(Servicio).filter(Servicio.id_negocio == negocio.id_negocio).all()
+
+    # Todas las citas activas del cliente (puede tener varias); cada una con
+    # su #id para que la IA indique cuál mover o cancelar.
+    citas_vigentes = agenda_service.citas_activas_cliente(db, negocio.id_negocio, cliente.id_cliente)
+    cita_activa_txt = "\n".join(
+        f"#{cita_obj.id_agenda}: {serv_obj.nombre_servicio} el {cita_obj.fecha_cita:%Y-%m-%d} "
+        f"({ai_service._DIAS[cita_obj.fecha_cita.weekday()]}) a las {cita_obj.hora_cita:%H:%M} "
+        f"(estado: {cita_obj.estado_cita}); recordatorios a nombre de {cita_obj.nombre_contacto or '-'}, "
+        f"correo {cita_obj.correo_contacto or '-'}, teléfono {cita_obj.telefono_contacto or '-'}"
+        for cita_obj, serv_obj in citas_vigentes
+    ) or None
+
+    catalogo_dicts = [
+        {
+            "nombre_servicio": s.nombre_servicio,
+            "precio": s.precio,
+            "duracion_estimada": s.duracion_estimada,
+        }
+        for s in catalogo
+    ]
+    perfil = {
+        "nombre_negocio": negocio.nombre_negocio,
+        "direccion": negocio.direccion,
+        "telefono": negocio.telefono,
+        "horario": negocio.horario,
+    }
+
+    prompt = ai_service.armar_prompt(
+        reglas_negocio=contexto.reglas_negocio if contexto else "",
+        instrucciones=contexto.instrucciones if contexto else "",
+        catalogo=catalogo_dicts,
+        mensaje_cliente=texto_mensaje,
+        catalogo_habilitado=contexto.consultar_catalogo if contexto else True,
+        historial=historial,
+        agendar_automatico=bool(contexto and contexto.agendar_automatico),
+        cita_activa=cita_activa_txt,
+        datos_cliente={
+            "nombre": cliente.nombre_cliente,
+            "correo": cliente.correo,
+            "whatsapp": cliente.telefono,
+        },
+        perfil_negocio=perfil,
+    )
+    return prompt, contexto, catalogo, catalogo_dicts, perfil
+
+
+def historial_para_ia(db: Session, id_conversacion: int) -> list[tuple[str, str]]:
+    """Memoria del bot: últimos mensajes de la conversación (de las últimas
+    HORAS_MEMORIA horas), sin los mensajes de respaldo."""
+    desde = datetime.utcnow() - timedelta(hours=HORAS_MEMORIA)
+    anteriores = (
+        db.query(Mensaje)
+        .filter(Mensaje.id_conversacion == id_conversacion, Mensaje.fecha_hora >= desde)
+        .order_by(Mensaje.id_mensaje.desc())
+        .limit(MENSAJES_MEMORIA)
+        .all()
+    )
+    return [(m.emisor, m.contenido) for m in reversed(anteriores) if m.contenido != ai_service.RESPUESTA_DE_RESPALDO]
 
 
 def procesar_mensaje(db: Session, negocio: Negocio, telefono_cliente: str, texto_mensaje: str) -> str:
@@ -396,51 +562,8 @@ def procesar_mensaje_detalle(
     db.commit()
 
     # RF-07: prompt dinámico con el contexto configurado en RF-03
-    contexto = db.query(ContextoIA).filter(ContextoIA.id_negocio == negocio.id_negocio).first()
-    catalogo = db.query(Servicio).filter(Servicio.id_negocio == negocio.id_negocio).all()
-
-    cita_vigente = agenda_service.obtener_cita_activa_cliente(db, negocio.id_negocio, cliente.id_cliente)
-    if cita_vigente is not None:
-        cita_obj, serv_obj = cita_vigente
-        cita_activa_txt = (
-            f"{serv_obj.nombre_servicio} el {cita_obj.fecha_cita:%Y-%m-%d} "
-            f"a las {cita_obj.hora_cita:%H:%M} (estado: {cita_obj.estado_cita}); "
-            f"recordatorios a nombre de {cita_obj.nombre_contacto or '-'}, "
-            f"correo {cita_obj.correo_contacto or '-'}, teléfono {cita_obj.telefono_contacto or '-'}"
-        )
-    else:
-        cita_activa_txt = None
-
-    catalogo_dicts = [
-        {
-            "nombre_servicio": s.nombre_servicio,
-            "precio": s.precio,
-            "duracion_estimada": s.duracion_estimada,
-        }
-        for s in catalogo
-    ]
-    perfil = {
-        "nombre_negocio": negocio.nombre_negocio,
-        "direccion": negocio.direccion,
-        "telefono": negocio.telefono,
-        "horario": negocio.horario,
-    }
-
-    prompt = ai_service.armar_prompt(
-        reglas_negocio=contexto.reglas_negocio if contexto else "",
-        instrucciones=contexto.instrucciones if contexto else "",
-        catalogo=catalogo_dicts,
-        mensaje_cliente=texto_mensaje,
-        catalogo_habilitado=contexto.consultar_catalogo if contexto else True,
-        historial=historial,
-        agendar_automatico=bool(contexto and contexto.agendar_automatico),
-        cita_activa=cita_activa_txt,
-        datos_cliente={
-            "nombre": cliente.nombre_cliente,
-            "correo": cliente.correo,
-            "whatsapp": cliente.telefono,
-        },
-        perfil_negocio=perfil,
+    prompt, contexto, catalogo, catalogo_dicts, perfil = armar_prompt_cliente(
+        db, negocio, cliente, texto_mensaje, historial
     )
 
     # RF-08: consultar el modelo de IA
@@ -455,15 +578,18 @@ def procesar_mensaje_detalle(
     if respuesta is None:
         # Ningún modelo respondió. 1) Si ya tiene hora y manda un teléfono o
         # correo nuevo, se actualizan los datos de los recordatorios.
-        respuesta = _cambiar_contacto_sin_ia(db, negocio, cliente, catalogo, texto_mensaje)
+        historial_reserva = _historial_para_reserva(db, conversacion.id_conversacion, desde)
+        respuesta = _cambiar_contacto_sin_ia(db, negocio, cliente, catalogo, texto_mensaje, historial_reserva)
 
     if respuesta is None:
         # 2) Si el cliente está dando datos para agendar, se juntan entre
         # mensajes y se reserva con las mismas reglas.
-        respuesta = _agendar_sin_ia(
-            db, negocio, cliente, contexto, catalogo,
-            _historial_para_reserva(db, conversacion.id_conversacion, desde), texto_mensaje,
+        historial_reserva = _historial_para_reserva(db, conversacion.id_conversacion, desde)
+        respuesta = _reagendar_o_cancelar_sin_ia(
+            db, negocio, cliente, contexto, catalogo, historial_reserva, texto_mensaje
         )
+        if respuesta is None:
+            respuesta = _agendar_sin_ia(db, negocio, cliente, contexto, catalogo, historial_reserva, texto_mensaje)
 
     if respuesta is None:
         # 3) Si no, contestamos con los datos del negocio (servicios, horario,

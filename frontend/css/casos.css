@@ -1,0 +1,97 @@
+/* ==========================================================================
+   Pestaña "Casos de uso": simulador de WhatsApp + tarjetas por requerimiento.
+   Usa los tokens de styles.css y los componentes de vista-v2.css.
+   ========================================================================== */
+
+.vista-v2 .casos-layout {
+  display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 18px; margin-bottom: 34px;
+}
+
+/* ---------- Simulador ---------- */
+.vista-v2 .casos-sim {
+  display: flex; flex-direction: column; min-height: 520px; max-height: 680px;
+  border: 1px solid var(--border); border-radius: var(--r-lg); overflow: hidden; background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+.vista-v2 .casos-sim-head {
+  display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--border);
+}
+.vista-v2 .casos-sim-head .chat-head-info { flex: 1; min-width: 0; }
+.vista-v2 .casos-sim-head small { display: block; font-size: 12px; }
+.vista-v2 .casos-sim-clientes { display: flex; gap: 6px; }
+.vista-v2 .casos-sim-clientes .chip { padding: 5px 11px; font-size: 12px; }
+.vista-v2 .casos-thread { min-height: 260px; }
+.vista-v2 .casos-thread .bubble.sistema {
+  align-self: center; max-width: 92%; background: var(--warning-tint); color: var(--text);
+  font-size: 12.5px; border-radius: 10px; box-shadow: none;
+}
+.vista-v2 .bubble .meta { display: block; font: 500 10.5px var(--font-mono); opacity: .75; margin-top: 4px; text-align: right; }
+.vista-v2 .bubble.escribiendo { opacity: .7; font-style: italic; }
+
+.vista-v2 .casos-guion {
+  display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 14px; border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+.vista-v2 .casos-guion .chip { white-space: nowrap; padding: 6px 12px; font-size: 12px; }
+.vista-v2 .casos-guion .chip .n { font: 600 10.5px var(--font-mono); opacity: .7; }
+.vista-v2 .casos-composer { border-top: 1px solid var(--border); }
+
+/* ---------- Panel lateral ---------- */
+.vista-v2 .casos-panel { display: flex; flex-direction: column; gap: 14px; }
+.vista-v2 .casos-box {
+  border: 1px solid var(--border); border-radius: var(--r); background: var(--surface); padding: 14px 16px;
+}
+.vista-v2 .casos-box-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.vista-v2 .casos-citas { display: flex; flex-direction: column; gap: 8px; }
+.vista-v2 .casos-cita {
+  border-left: 3px solid var(--brand); background: var(--bg); border-radius: 8px; padding: 8px 10px; font-size: 13px;
+  animation: v2-rise .25s var(--ease) both;
+}
+.vista-v2 .casos-cita b { display: block; }
+.vista-v2 .casos-cita small { color: var(--text-muted); font-family: var(--font-mono); font-size: 11px; }
+.vista-v2 .casos-cita.confirmada { border-left-color: var(--success); }
+.vista-v2 .casos-detalle { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0 0 12px; font-size: 13px; }
+.vista-v2 .casos-detalle dt { color: var(--text-muted); }
+.vista-v2 .casos-detalle dd { margin: 0; font-family: var(--font-mono); font-size: 12.5px; }
+
+/* ---------- Tarjetas de casos de uso ---------- */
+.vista-v2 .casos-titulo { font-size: 19px; font-weight: 700; margin: 0 0 12px; }
+.vista-v2 .casos-filtros { margin-bottom: 16px; }
+.vista-v2 .casos-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+.vista-v2 .caso {
+  display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--border); border-radius: var(--r);
+  background: var(--surface); padding: 16px; box-shadow: var(--shadow-sm); animation: v2-rise .3s var(--ease) both;
+}
+.vista-v2 .caso-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.vista-v2 .caso-codigo { font: 600 11.5px var(--font-mono); letter-spacing: .06em; color: var(--brand); }
+.vista-v2 .caso h3 { font-size: 15.5px; font-weight: 700; margin: 0; }
+.vista-v2 .caso p { margin: 0; font-size: 13px; color: var(--text-muted); }
+.vista-v2 .caso-actor { font-size: 11.5px; color: var(--text-faint); }
+.vista-v2 .caso-evidencia {
+  font-size: 12.5px; background: var(--bg); border-radius: 8px; padding: 8px 10px; font-family: var(--font-mono);
+  line-height: 1.45; white-space: pre-wrap;
+}
+.vista-v2 .caso-acciones { display: flex; gap: 6px; flex-wrap: wrap; margin-top: auto; padding-top: 4px; }
+.vista-v2 .pill-warning { background: var(--warning-tint); color: var(--warning); }
+.vista-v2 .pill-danger { background: var(--danger-tint); color: var(--danger); }
+
+/* ---------- Modal (prompt / vista móvil) ---------- */
+.vista-v2 .modal.casos-modal { width: min(860px, 100%); text-align: left; max-height: 90vh; display: flex; flex-direction: column; }
+.vista-v2 .casos-modal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.vista-v2 .casos-modal pre {
+  margin: 0; overflow: auto; max-height: 65vh; background: var(--bg); border-radius: 10px; padding: 14px;
+  font: 12px/1.5 var(--font-mono); white-space: pre-wrap;
+}
+.vista-v2 .casos-movil { display: flex; justify-content: center; }
+.vista-v2 .casos-movil iframe {
+  width: 390px; height: min(720px, 75vh); border: 10px solid var(--leather); border-radius: 34px; background: var(--bg);
+}
+
+@media (max-width: 900px) {
+  .vista-v2 .casos-layout { grid-template-columns: 1fr; }
+  .vista-v2 .casos-sim { min-height: 460px; }
+  .vista-v2 .casos-sim-head { flex-wrap: wrap; }
+  .vista-v2 .casos-sim-clientes { width: 100%; }
+  .vista-v2 .casos-guion { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; }
+  .vista-v2 .casos-movil iframe { width: 100%; }
+}

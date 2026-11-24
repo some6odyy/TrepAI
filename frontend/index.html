@@ -15,6 +15,7 @@
     href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
   <link rel="stylesheet" href="css/styles.css">
   <link rel="stylesheet" href="css/vista-v2.css">
+  <link rel="stylesheet" href="css/casos.css">
   <link rel="stylesheet" href="css/responsivo.css">
 </head>
 
@@ -222,6 +223,14 @@
             <path d="M18.5 14.8c1.7.7 2.8 2.4 3 5.2" />
           </svg>
           Clientes
+        </button>
+        <button type="button" class="nav-item" data-view="casos">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+            stroke-linejoin="round">
+            <path d="M9 11l2 2 4-4" />
+            <rect x="3" y="3" width="18" height="18" rx="3" />
+          </svg>
+          Casos de uso
         </button>
         <button type="button" class="nav-item" data-view="cuenta">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
@@ -818,6 +827,78 @@
           <div class="clientes-grid" id="listaClientes"></div>
         </section>
 
+        <!-- ---------- CASOS DE USO (demostración en vivo) ---------- -->
+        <section class="view vista-v2" id="viewCasos">
+          <div class="page-head">
+            <div>
+              <div class="eyebrow">Casos de uso</div>
+              <h1>Demostración en vivo</h1>
+              <p class="text-muted">Cada requerimiento con su evidencia real y un botón para probarlo. El simulador
+                procesa los mensajes con el mismo flujo que WhatsApp (IA, agenda, reglas), sin enviarlos a un teléfono.</p>
+            </div>
+            <div class="head-actions">
+              <button class="btn" id="btnCasosActualizar">Actualizar evidencia</button>
+            </div>
+          </div>
+
+          <div class="casos-layout">
+            <!-- Simulador de WhatsApp -->
+            <section class="casos-sim">
+              <header class="casos-sim-head">
+                <div class="avatar avatar-sm" id="simAvatar">1</div>
+                <div class="chat-head-info">
+                  <b>Simulador de WhatsApp</b>
+                  <small class="text-muted" id="simSub">Cliente de prueba 1 · +56 9 0000 0001</small>
+                </div>
+                <div class="casos-sim-clientes" role="group" aria-label="Cliente de prueba">
+                  <button class="chip active" data-sim-tel="56900000001">Cliente 1</button>
+                  <button class="chip" data-sim-tel="56900000002">Cliente 2</button>
+                </div>
+              </header>
+              <div class="chat-thread casos-thread" id="simThread">
+                <div class="chat-empty">
+                  <svg class="i"><use href="#i-chat" /></svg>
+                  <p>Escribe como si fueras un cliente, o usa el guion de abajo.</p>
+                </div>
+              </div>
+              <div class="casos-guion" id="simGuion" aria-label="Guion de demostración"></div>
+              <form class="chat-composer casos-composer" id="simForm" autocomplete="off">
+                <textarea id="simTexto" rows="1" maxlength="2000" placeholder="Mensaje del cliente…"
+                  aria-label="Mensaje del cliente de prueba" required></textarea>
+                <button type="submit" class="btn btn-primary" id="simEnviar">Enviar</button>
+              </form>
+            </section>
+
+            <!-- Panel lateral: citas del cliente de prueba + detalle técnico -->
+            <aside class="casos-panel">
+              <div class="casos-box">
+                <div class="casos-box-head">
+                  <b>Citas activas del cliente</b>
+                  <button class="btn btn-ghost btn-sm" id="btnSimReiniciar" title="Cancela sus citas y cierra la conversación">Reiniciar</button>
+                </div>
+                <div id="simCitas" class="casos-citas"><p class="text-muted">Sin citas.</p></div>
+              </div>
+              <div class="casos-box">
+                <div class="casos-box-head"><b>Última respuesta</b></div>
+                <dl class="casos-detalle" id="simDetalle">
+                  <dt>Origen</dt><dd>—</dd>
+                  <dt>Latencia</dt><dd>—</dd>
+                </dl>
+                <button class="btn btn-sm btn-block" id="btnSimPrompt">Ver prompt dinámico (RF-07)</button>
+              </div>
+            </aside>
+          </div>
+
+          <h2 class="casos-titulo">Requerimientos y casos de uso</h2>
+          <div class="casos-filtros filter-chips" id="casosFiltros">
+            <button class="chip active" data-grupo="">Todos</button>
+            <button class="chip" data-grupo="rf">Funcionales</button>
+            <button class="chip" data-grupo="ag">Agenda por WhatsApp</button>
+            <button class="chip" data-grupo="rnf">No funcionales</button>
+          </div>
+          <div class="casos-grid" id="casosGrid"></div>
+        </section>
+
         <!-- ---------- MI CUENTA ---------- -->
         <section class="view vista-v2" id="viewCuenta">
           <div class="page-head">
@@ -1026,6 +1107,17 @@
     </div>
   </div>
 
+  <!-- Casos de uso: prompt dinámico / vista móvil -->
+  <div class="modal-backdrop vista-v2" id="modalCasos">
+    <div class="modal casos-modal" role="dialog" aria-modal="true" aria-labelledby="modalCasosTitulo">
+      <div class="casos-modal-head">
+        <b id="modalCasosTitulo">—</b>
+        <button class="icon-btn" id="btnCerrarModalCasos" aria-label="Cerrar"><svg class="i"><use href="#i-x" /></svg></button>
+      </div>
+      <div id="modalCasosCuerpo"></div>
+    </div>
+  </div>
+
   <div class="toast-stack" id="toastStack"></div>
 
   <script>
@@ -1037,6 +1129,7 @@
   </script>
   <script src="js/api.js"></script>
   <script src="js/app.js"></script>
+  <script src="js/casos.js"></script>
 </body>
 
 </html>

@@ -15,7 +15,7 @@ from app.core.config import CORS_ALLOWED_ORIGINS, BASE_DIR
 from app import models  # noqa: F401 — registra los modelos en Base antes de crear las tablas
 from app.routers import (
     auth, negocio, contexto, webhook, agenda, conversaciones, puente, tareas, publico, novedades,
-    bloqueos, clientes, metricas,
+    bloqueos, clientes, metricas, demo,
 )
 
 app = FastAPI(
@@ -114,6 +114,7 @@ app.include_router(webhook.router)
 app.include_router(novedades.router)
 app.include_router(tareas.router)
 app.include_router(publico.router)
+app.include_router(demo.router)  # pestaña "Casos de uso" del Dashboard
 app.include_router(puente.router)  # demo con whatsapp-web.js (desactivado sin PUENTE_TOKEN)
 
 
